@@ -19,7 +19,15 @@
 
 ---
 
-## 🧩 如何安装（适用于 Chrome / Edge 浏览器）
+## 🧩 安装方式（适用于 Chrome / Edge 浏览器）
+
+### ✅ 推荐方式：通过 Chrome 应用商店安装
+
+👉 [前往 Chrome 应用商店安装插件](https://chromewebstore.google.com/detail/ickndngbbabdllekmflaaogkpmnloalg?utm_source=item-share-cb)
+
+---
+
+### 🛠 手动安装方式（适合开发者或本地调试）
 
 1. 下载本项目并找到 `extension/` 文件夹（包含 `manifest.json`, `content.js`, `styles.css`）
 2. 打开浏览器，访问：`chrome://extensions/`

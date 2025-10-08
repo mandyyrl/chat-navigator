@@ -21,6 +21,14 @@ This extension adds an interactive timeline bar to your ChatGPT conversation pag
 
 ## 🧩 How to Install (Chrome / Edge)
 
+### ✅ Recommended: Install from Chrome Web Store
+
+👉 [Install from Chrome Web Store](https://chromewebstore.google.com/detail/ickndngbbabdllekmflaaogkpmnloalg?utm_source=item-share-cb)
+
+---
+
+### 🛠 Manual Installation (for developers or local testing)
+
 1. Download this repository and locate the `extension/` folder (contains `manifest.json`, `content.js`, `styles.css`)
 2. In your browser, go to: `chrome://extensions/`
 3. Enable “Developer Mode” (top right)
