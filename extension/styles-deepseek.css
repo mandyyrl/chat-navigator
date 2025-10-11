@@ -55,7 +55,7 @@ html.dark, body.dark, html[data-theme="dark"], [data-theme="dark"], [data-color-
 .chatgpt-timeline-bar {
     position: fixed;
     top: 60px; /* Position below the main header */
-    right: 15px;
+    right: 20px;
     width: 24px;
     height: calc(100vh - 100px); /* Avoid overlapping the bottom input area */
     z-index: 2147483646; /* ensure above site chrome */

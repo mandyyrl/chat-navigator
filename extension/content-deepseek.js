@@ -725,6 +725,8 @@
         } catch {}
       }
     }
+    // Abort stale pass if markers changed during work
+    if (localVer !== this.markersVersion) return;
     if (frag.childNodes.length) this.trackContent.appendChild(frag);
     this.visibleRange = { start, end };
   };
@@ -1302,36 +1304,41 @@
   let providerEnabled = true;      // per-provider on/off (deepseek)
   let manager = null;
   let currentUrl = location.href;
-  let routePollId = null;
+  let routeCheckIntervalId = null;
+  let routeListenersAttached = false;
   let initialObserver = null;
   let pageObserver = null;
   let initTimerId = null;           // delayed init timer for SPA route
 
   function initializeTimeline() {
     if (manager) { try { manager.destroy(); } catch {} manager = null; }
+    // Remove any leftover UI before creating a new instance (align with ChatGPT)
     try { document.querySelector('.chatgpt-timeline-bar')?.remove(); } catch {}
+    try { document.querySelector('.timeline-left-slider')?.remove(); } catch {}
+    try { document.getElementById('chatgpt-timeline-tooltip')?.remove(); } catch {}
     manager = new DeepseekTimeline();
     manager.init().catch(err => console.debug('[DeepseekTimeline] init failed:', err));
   }
 
   function cleanupGlobalObservers() {
-    try { initialObserver?.disconnect(); } catch {}
+    // Align with ChatGPT: keep route listeners and HREF polling alive.
+    // Only detach heavy page-level MutationObserver; allow future SPA navigations to be detected.
     try { pageObserver?.disconnect(); } catch {}
-    initialObserver = null;
     pageObserver = null;
-    try {
-      if (routePollId) { clearInterval(routePollId); routePollId = null; }
-    } catch {}
-    try {
-      if (initTimerId) { clearTimeout(initTimerId); initTimerId = null; }
-    } catch {}
+    // Do not clear routeCheckIntervalId (keeps href polling active)
+    // Do not touch initialObserver (bootstrap-only)
+    try { if (initTimerId) { clearTimeout(initTimerId); initTimerId = null; } } catch {}
   }
 
   function handleUrlChange() {
     if (location.href === currentUrl) return;
+    // Cancel any pending init from previous route
+    try { if (initTimerId) { clearTimeout(initTimerId); initTimerId = null; } } catch {}
     currentUrl = location.href;
     if (manager) { try { manager.destroy(); } catch {} manager = null; }
     try { document.querySelector('.chatgpt-timeline-bar')?.remove(); } catch {}
+    try { document.querySelector('.timeline-left-slider')?.remove(); } catch {}
+    try { document.getElementById('chatgpt-timeline-tooltip')?.remove(); } catch {}
 
     const enabled = (timelineActive && providerEnabled);
     if (isConversationRouteDeepseek() && enabled) {
@@ -1358,6 +1365,27 @@
     }
   }
 
+  // Align with ChatGPT: attach route listeners once (popstate/hashchange + href polling)
+  function attachRouteListenersOnce() {
+    if (routeListenersAttached) return;
+    routeListenersAttached = true;
+    try { window.addEventListener('popstate', handleUrlChange); } catch {}
+    try { window.addEventListener('hashchange', handleUrlChange); } catch {}
+    try {
+      routeCheckIntervalId = setInterval(() => {
+        if (location.href !== currentUrl) handleUrlChange();
+      }, 800);
+    } catch {}
+  }
+
+  function detachRouteListeners() {
+    if (!routeListenersAttached) return;
+    routeListenersAttached = false;
+    try { window.removeEventListener('popstate', handleUrlChange); } catch {}
+    try { window.removeEventListener('hashchange', handleUrlChange); } catch {}
+    try { if (routeCheckIntervalId) { clearInterval(routeCheckIntervalId); routeCheckIntervalId = null; } } catch {}
+  }
+
   // Boot: wait for first message to appear then init (if route matches)
   try {
     initialObserver = new MutationObserver(() => {
@@ -1366,16 +1394,15 @@
         try { initialObserver.disconnect(); } catch {}
         pageObserver = new MutationObserver(handleUrlChange);
         try { pageObserver.observe(document.body, { childList: true, subtree: true }); } catch {}
+        // Ensure route listeners are attached once
+        attachRouteListenersOnce();
       }
     });
     initialObserver.observe(document.body, { childList: true, subtree: true });
   } catch {}
 
-  try { window.addEventListener('popstate', handleUrlChange); } catch {}
-  try { window.addEventListener('hashchange', handleUrlChange); } catch {}
-  try {
-    routePollId = setInterval(() => { if (location.href !== currentUrl) handleUrlChange(); }, 800);
-  } catch {}
+  // Proactively attach route listeners; guarded to run only once
+  attachRouteListenersOnce();
 
   // Read initial toggles (new keys only) and react to changes
   try {
