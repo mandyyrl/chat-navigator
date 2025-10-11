@@ -1,21 +1,24 @@
 <p align="center">
-  <img src="public/preview.png" alt="Plugin Preview"">
+  <img src="public/preview.png" alt="Plugin Preview">
 </p>
 
 # 🕰 ChatGPT Conversation Timeline Extension
 
 > 🇨🇳 查看中文版：[README.zh-CN.md](./README.zh-CN.md)
 
-This extension adds an interactive timeline bar to your ChatGPT conversation pages, helping you quickly understand the structure of the dialogue and jump to any message with a single click.
+An extension that adds an interactive timeline to your AI chat conversations. **Now supports both ChatGPT and DeepSeek!**
+
+This extension adds an interactive timeline bar to your conversation pages, helping you quickly understand the structure of the dialogue and jump to any message with a single click.
 
 ---
 
 ## ✨ Features
 
-- 📍 Clickable markers for each user message  
-- 🧭 Instantly jump to any point in the conversation  
-- ⭐ Long-press a message to star it, and see it highlighted on the timeline (stars are saved in localStorage, so they persist even after refresh)  
-- 🌗 Auto-adapts to ChatGPT's light/dark theme  
+- **🌐 Multi-Platform Support**: Works seamlessly on both **ChatGPT** and **DeepSeek**.
+- **📍 Clickable Markers**: Instantly jump to any point in the conversation via clickable markers for each user message.
+- **⭐ Star Messages**: Long-press a message to star it, and see it highlighted on the timeline. Stars are saved locally and persist across sessions.
+- **🌗 Auto-Theming**: Automatically adapts to the light/dark theme of each platform.
+- **⚙️ Full Control**: A simple popup menu allows you to enable or disable the timeline globally or for each site individually.
 
 ---
 
@@ -29,21 +32,21 @@ This extension adds an interactive timeline bar to your ChatGPT conversation pag
 
 ### 🛠 Manual Installation (for developers or local testing)
 
-1. Download this repository and locate the `extension/` folder (contains `manifest.json`, `content.js`, `styles.css`)
+1. Download this repository and locate the `extension/` folder.
 2. In your browser, go to: `chrome://extensions/`
-3. Enable “Developer Mode” (top right)
-4. Click **“Load unpacked”**
-5. Select the `extension/` folder to install
+3. Enable “Developer Mode” (top right).
+4. Click **“Load unpacked”**.
+5. Select the `extension/` folder to install.
 
-> After installation, open any ChatGPT conversation and the timeline will appear on the right.
+> After installation, open any ChatGPT or DeepSeek conversation and the timeline will appear on the right.
 
 ## 🙏 Acknowledgement
 
 Inspired by the clean and efficient timeline navigation interface from **Google AI Studio**.  
-We aim to bring the same intuitive experience to ChatGPT users.
+We aim to bring the same intuitive experience to more AI chat platforms.
 
 ---
 
 ## 📄 License
 
-This project is open-sourced under the [MIT License](LICENSE).  
+This project is open-sourced under the [MIT License](LICENSE).
