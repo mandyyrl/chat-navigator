@@ -1,0 +1,82 @@
+# 工作流的名称
+name: Release Extension
+
+# 1. 触发条件
+on:
+  push:
+    tags:
+      - 'v*' # 只有当一个以 'v' 开头的标签（如 v1.0.0, v2.3.4）被推送到仓库时，此工作流才会被触发。
+  workflow_dispatch: # 允许从 GitHub 界面手动触发一次发布（不会生成标签）
+
+# 任务定义
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest 
+    
+    # 2. 权限设置
+    permissions:
+      contents: write # 明确向 GitHub 申请对仓库内容的“写入”权限。这是创建 Release 所必需的，是一种安全最佳实践。
+
+    steps:
+      # 步骤 1: 检出代码
+      - name: Checkout
+        uses: actions/checkout@v4 
+
+      # 步骤 2: 确保工具存在
+      - name: Ensure required tooling
+        shell: bash
+        run: |
+          # 合并 apt 安装，减少重复的 update 步骤
+          sudo apt-get update && sudo apt-get install -y jq zip
+
+      # 步骤 3: 设置变量
+      - name: Set variables
+        id: vars # 给这个步骤一个 ID，方便后续引用它的输出
+        shell: bash
+        run: |
+          # 使用内置的 GITHUB_REF_NAME（值为标签名，如 v1.0.0）
+          TAG="$GITHUB_REF_NAME"
+          # 从 TAG 中去掉 'v' 前缀，得到 '1.0.0'
+          VERSION="${TAG#v}"
+          # 拼接出最终的 zip 文件名
+          ZIP_NAME="chatgpt-conversation-timeline-${TAG}.zip"
+          # 使用 GITHUB_OUTPUT 将这些变量暴露给后续步骤使用
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "zip_name=$ZIP_NAME" >> "$GITHUB_OUTPUT"
+
+      # 步骤 4: 验证 manifest.json 中的版本号
+      - name: Validate manifest version
+        shell: bash
+        run: |
+          # 使用 jq 工具从 manifest.json 文件中精确地读取 version 字段的值
+          MANIFEST_VERSION=$(jq -r '.version' extension/manifest.json)
+          echo "Manifest version: ${MANIFEST_VERSION}"
+          echo "Tag version: ${{ steps.vars.outputs.version }}" # 从上一步获取版本号
+          # 比较两个版本号是否一致
+          if [ "$MANIFEST_VERSION" != "${{ steps.vars.outputs.version }}" ]; then
+            echo "Error: manifest.json version ($MANIFEST_VERSION) does not match tag version (${{ steps.vars.outputs.version }})"
+            exit 1 # 如果不一致，打印错误信息并立即退出，工作流失败。
+          fi
+
+      # 步骤 5: 打包扩展
+      - name: Package extension
+        shell: bash
+        run: |
+          cd extension # 进入 extension 目录
+          # 将当前目录所有文件打包成 zip
+          zip -r "../${{ steps.vars.outputs.zip_name }}" .
+
+      # 步骤 6: 发布 GitHub Release
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2 # 使用一个非常流行的第三方 Action
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }} # Release 的标签名
+          name: ${{ steps.vars.outputs.tag }} # Release 的标题
+          files: ${{ steps.vars.outputs.zip_name }} # 要上传的产物文件
+          generate_release_notes: true # 自动生成 Release Notes！它会收集两次发布之间的所有 commit 信息。
+          # 判断标签名是否包含 '-'，如果包含（如 v1.1.0-beta），就标记为预发布版本。
+          prerelease: ${{ contains(steps.vars.outputs.tag, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # 授权 Action 操作仓库
