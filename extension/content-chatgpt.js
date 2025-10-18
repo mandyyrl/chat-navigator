@@ -105,13 +105,9 @@ class TimelineManager {
         this.setupObservers();
 
         // Initialize AI Summarizer
-        console.log('[Timeline] Attempting to initialize AI Summarizer...');
-        console.log('[Timeline] window.summarizerManager exists:', !!window.summarizerManager);
         try {
             if (window.summarizerManager) {
-                const initialized = await window.summarizerManager.initialize();
-                console.log('[Timeline] Summarizer initialized:', initialized);
-                console.log('[Timeline] Summarizer isAvailable:', window.summarizerManager.isAvailable);
+                await window.summarizerManager.initialize();
             } else {
                 console.warn('[Timeline] window.summarizerManager not found!');
             }
@@ -218,35 +214,20 @@ class TimelineManager {
 
             // Summarizer button click handler with toggle functionality
             summarizerBtn.addEventListener('click', async () => {
-                console.log('[Timeline] Summarizer button clicked');
-                console.log('[Timeline] isSummarizing:', this.isSummarizing);
-                console.log('[Timeline] summarizerState:', this.summarizerState);
-
-                if (this.isSummarizing) {
-                    console.log('[Timeline] Already summarizing, skipping');
-                    return;
-                }
+                if (this.isSummarizing) return;
 
                 // Toggle functionality
                 if (this.summarizerState === 'idle') {
-                    // Generate AI summaries
-                    console.log('[Timeline] Starting summarization...');
                     await this.applySummarizationToAllMarkers();
                 } else if (this.summarizerState === 'completed') {
                     // Check if there are new unsummarized markers
                     const hasUnsummarizedMarkers = this.markers.some(m => !m.aiSummary);
                     if (hasUnsummarizedMarkers) {
-                        // Incrementally summarize new markers only
-                        console.log('[Timeline] Detected new messages, summarizing new ones only...');
                         await this.applySummarizationToAllMarkers();
                     } else {
-                        // Switch to original text
-                        console.log('[Timeline] Switching to original text...');
                         this.switchToOriginalText();
                     }
                 } else if (this.summarizerState === 'original') {
-                    // Switch back to AI summaries (already cached)
-                    console.log('[Timeline] Switching back to AI summaries...');
                     this.switchToAISummaries();
                 }
             });
@@ -275,11 +256,7 @@ class TimelineManager {
 
             // Click handler: incrementally summarize new markers
             incrementalBtn.addEventListener('click', async () => {
-                console.log('[Timeline] Incremental button clicked - summarizing new markers');
-                if (this.isSummarizing) {
-                    console.log('[Timeline] Already summarizing, skipping');
-                    return;
-                }
+                if (this.isSummarizing) return;
                 await this.applySummarizationToAllMarkers();
             });
         }
@@ -384,7 +361,6 @@ class TimelineManager {
             // Apply pending summaries if available (from localStorage on page load)
             if (!aiSummary && this._pendingSummaries && this._pendingSummaries[id]) {
                 aiSummary = this._pendingSummaries[id];
-                console.log(`[Timeline] Applied pending AI summary for marker ${id}:`, aiSummary);
             }
 
             // Use AI summary if we're in AI mode, otherwise use original
@@ -408,7 +384,6 @@ class TimelineManager {
 
         // Clear pending summaries after applying them
         if (this._pendingSummaries) {
-            console.log('[Timeline] Cleared _pendingSummaries after applying to markers');
             this._pendingSummaries = null;
         }
 
@@ -1565,19 +1540,10 @@ class TimelineManager {
         if (!cid) return;
         try {
             const raw = localStorage.getItem(`chatgptTimelineSummaries:${cid}`);
-            if (!raw) {
-                console.log('[Timeline] No saved summarization state found for conversation', cid);
-                return;
-            }
+            if (!raw) return;
 
             const state = JSON.parse(raw);
             if (!state) return;
-
-            console.log('[Timeline] Loading summarization state:', {
-                summarizerState: state.summarizerState,
-                useSummarization: state.useSummarization,
-                summariesCount: Object.keys(state.summaries || {}).length
-            });
 
             // Restore state
             this.summarizerState = state.summarizerState || 'idle';
@@ -1585,9 +1551,7 @@ class TimelineManager {
 
             // Restore AI summaries to markers (markers may not be built yet, so we'll apply after recalc)
             if (state.summaries && typeof state.summaries === 'object') {
-                // Store summaries temporarily to apply after markers are built
                 this._pendingSummaries = state.summaries;
-                console.log('[Timeline] Stored', Object.keys(state.summaries).length, 'AI summaries in _pendingSummaries');
             }
 
             // Update button UI to reflect restored state
@@ -1668,7 +1632,6 @@ class TimelineManager {
                 }
                 this.ui.incrementalButton.style.display = 'flex';
                 this.ui.incrementalButton.setAttribute('title', `Summarize ${unsummarizedCount} new message${unsummarizedCount > 1 ? 's' : ''}`);
-                console.log(`[Timeline] Showing incremental button for ${unsummarizedCount} unsummarized markers`);
             } else {
                 this.ui.incrementalButton.style.display = 'none';
             }
@@ -1706,20 +1669,13 @@ class TimelineManager {
 
     // --- AI Summarization Methods ---
     async applySummarizationToAllMarkers() {
-        console.log('[Timeline] applySummarizationToAllMarkers called');
-        console.log('[Timeline] window.summarizerManager exists:', !!window.summarizerManager);
-        console.log('[Timeline] summarizerManager.isAvailable:', window.summarizerManager?.isAvailable);
-
         if (!window.summarizerManager || !window.summarizerManager.isAvailable) {
-            console.warn('[Timeline] Summarizer not available - window.summarizerManager:', !!window.summarizerManager, 'isAvailable:', window.summarizerManager?.isAvailable);
+            console.warn('[Timeline] Summarizer not available');
             alert('AI Summarizer is not available. Make sure you are using Chrome 128+ with the AI features enabled.');
             return;
         }
 
-        if (this.isSummarizing) {
-            console.debug('[Timeline] Already summarizing');
-            return;
-        }
+        if (this.isSummarizing) return;
 
         this.isSummarizing = true;
         this.summarizerState = 'processing';
@@ -1756,12 +1712,8 @@ class TimelineManager {
             }
 
             const totalToProcess = markersNeedingSummary.length;
-            const alreadySummarized = this.markers.length - totalToProcess;
-
-            console.debug(`[Timeline] Found ${totalToProcess} new markers to summarize (${alreadySummarized} already summarized)`);
 
             if (totalToProcess === 0) {
-                console.log('[Timeline] All markers already have AI summaries');
                 this.useSummarization = true;
                 this.summarizerState = 'completed';
                 this.saveSummarizationState();
@@ -1822,7 +1774,6 @@ class TimelineManager {
 
             this.useSummarization = true;
             this.summarizerState = 'completed';
-            console.debug('[Timeline] AI summarization completed');
 
             // Save summarization state to localStorage
             this.saveSummarizationState();
@@ -1884,8 +1835,6 @@ class TimelineManager {
     }
 
     switchToOriginalText() {
-        console.log('[Timeline] Switching to original text');
-
         // Update all markers to use original text
         for (let i = 0; i < this.markers.length; i++) {
             const marker = this.markers[i];
@@ -1931,8 +1880,6 @@ class TimelineManager {
     }
 
     switchToAISummaries() {
-        console.log('[Timeline] Switching back to AI summaries');
-
         // Update all markers to use AI summaries (already cached)
         for (let i = 0; i < this.markers.length; i++) {
             const marker = this.markers[i];
