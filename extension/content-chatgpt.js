@@ -233,14 +233,48 @@ class TimelineManager {
                     console.log('[Timeline] Starting summarization...');
                     await this.applySummarizationToAllMarkers();
                 } else if (this.summarizerState === 'completed') {
-                    // Switch to original text
-                    console.log('[Timeline] Switching to original text...');
-                    this.switchToOriginalText();
+                    // Check if there are new unsummarized markers
+                    const hasUnsummarizedMarkers = this.markers.some(m => !m.aiSummary);
+                    if (hasUnsummarizedMarkers) {
+                        // Incrementally summarize new markers only
+                        console.log('[Timeline] Detected new messages, summarizing new ones only...');
+                        await this.applySummarizationToAllMarkers();
+                    } else {
+                        // Switch to original text
+                        console.log('[Timeline] Switching to original text...');
+                        this.switchToOriginalText();
+                    }
                 } else if (this.summarizerState === 'original') {
                     // Switch back to AI summaries (already cached)
                     console.log('[Timeline] Switching back to AI summaries...');
                     this.switchToAISummaries();
                 }
+            });
+        }
+
+        // Create incremental summarize button (top-right corner)
+        if (!this.ui.incrementalButton) {
+            const incrementalBtn = document.createElement('button');
+            incrementalBtn.className = 'timeline-incremental-button';
+            incrementalBtn.setAttribute('aria-label', 'Summarize new messages');
+            incrementalBtn.setAttribute('title', 'Summarize new messages');
+            incrementalBtn.style.display = 'none'; // Hidden by default, shown when needed
+            incrementalBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6M1 20v-6h6"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            <span class="count-badge">0</span>`;
+            document.body.appendChild(incrementalBtn);
+            this.ui.incrementalButton = incrementalBtn;
+
+            // Click handler: incrementally summarize new markers
+            incrementalBtn.addEventListener('click', async () => {
+                console.log('[Timeline] Incremental button clicked - summarizing new markers');
+                if (this.isSummarizing) {
+                    console.log('[Timeline] Already summarizing, skipping');
+                    return;
+                }
+                await this.applySummarizationToAllMarkers();
             });
         }
 
@@ -371,6 +405,12 @@ class TimelineManager {
             console.log('[Timeline] Cleared _pendingSummaries after applying to markers');
             this._pendingSummaries = null;
         }
+
+        // Check if there are unsummarized markers and update incremental button
+        if (this.summarizerState === 'completed' || this.summarizerState === 'original') {
+            this.updateIncrementalSummarizeButton();
+        }
+
         // Bump version after markers are rebuilt to invalidate concurrent passes
         this.markersVersion++;
 
@@ -1578,6 +1618,46 @@ class TimelineManager {
         }
     }
 
+    // Update incremental summarize button (shows count of unsummarized markers)
+    updateIncrementalSummarizeButton() {
+        // Count markers that don't have AI summaries
+        const unsummarizedCount = this.markers.filter(m => !m.aiSummary).length;
+        const summarizedCount = this.markers.filter(m => m.aiSummary).length;
+
+        // Only show if:
+        // 1. We've completed at least one full summarization (state is 'completed' or 'original')
+        // 2. There are some markers WITH AI summaries (meaning we did summarize before)
+        // 3. There are NEW markers without AI summaries
+        const shouldShow = (this.summarizerState === 'completed' || this.summarizerState === 'original')
+                          && summarizedCount > 0
+                          && unsummarizedCount > 0;
+
+        if (!this.ui.incrementalButton || !this.ui.summarizerButton) return;
+
+        try {
+            if (shouldShow) {
+                // Position button relative to summarizer button (mid-bottom, centered horizontally)
+                const summarizerRect = this.ui.summarizerButton.getBoundingClientRect();
+                const buttonWidth = this.ui.incrementalButton.offsetWidth || 30; // estimate if not rendered
+                this.ui.incrementalButton.style.top = `${summarizerRect.bottom - 2}px`;
+                this.ui.incrementalButton.style.left = `${summarizerRect.left + (summarizerRect.width / 2) - (buttonWidth / 2)}px`;
+
+                // Update the count badge
+                const badge = this.ui.incrementalButton.querySelector('.count-badge');
+                if (badge) {
+                    badge.textContent = unsummarizedCount;
+                }
+                this.ui.incrementalButton.style.display = 'flex';
+                this.ui.incrementalButton.setAttribute('title', `Summarize ${unsummarizedCount} new message${unsummarizedCount > 1 ? 's' : ''}`);
+                console.log(`[Timeline] Showing incremental button for ${unsummarizedCount} unsummarized markers`);
+            } else {
+                this.ui.incrementalButton.style.display = 'none';
+            }
+        } catch (error) {
+            console.debug('[Timeline] Failed to update incremental summarize button:', error);
+        }
+    }
+
     toggleStar(turnId) {
         const id = String(turnId || '');
         if (!id) return;
@@ -1645,45 +1725,79 @@ class TimelineManager {
         }
 
         try {
-            console.debug('[Timeline] Starting AI summarization for', this.markers.length, 'markers');
+            // Identify markers that need summarization (don't have AI summary yet)
+            const markersNeedingSummary = [];
+            const markerIndices = [];
 
-            const textsToSummarize = this.markers.map(m => m.originalText || m.summary);
-            const totalCount = textsToSummarize.length;
-            let completedCount = 0;
-
-            // Process summaries one by one to show progress
-            const summaries = [];
-            for (let i = 0; i < textsToSummarize.length; i++) {
-                try {
-                    const summary = await window.summarizerManager.summarize(textsToSummarize[i]);
-                    summaries.push(summary);
-                    completedCount++;
-
-                    // Update progress percentage
-                    const percentage = Math.round((completedCount / totalCount) * 100);
-                    if (progressText) {
-                        progressText.textContent = `${percentage}%`;
-                    }
-                } catch (error) {
-                    console.warn('[Timeline] Failed to summarize marker', i, error);
-                    summaries.push(null);
-                    completedCount++;
+            for (let i = 0; i < this.markers.length; i++) {
+                if (!this.markers[i].aiSummary) {
+                    markersNeedingSummary.push(this.markers[i]);
+                    markerIndices.push(i);
                 }
             }
 
-            // Update markers with AI summaries
-            for (let i = 0; i < this.markers.length; i++) {
-                const marker = this.markers[i];
-                if (summaries[i]) {
-                    marker.aiSummary = summaries[i];
-                    marker.summary = summaries[i];
+            const totalToProcess = markersNeedingSummary.length;
+            const alreadySummarized = this.markers.length - totalToProcess;
+
+            console.debug(`[Timeline] Found ${totalToProcess} new markers to summarize (${alreadySummarized} already summarized)`);
+
+            if (totalToProcess === 0) {
+                console.log('[Timeline] All markers already have AI summaries');
+                this.useSummarization = true;
+                this.summarizerState = 'completed';
+                this.saveSummarizationState();
+
+                // Update button immediately
+                if (this.ui.summarizerButton) {
+                    try {
+                        this.ui.summarizerButton.classList.remove('processing');
+                        this.ui.summarizerButton.classList.add('completed');
+                        this.ui.summarizerButton.removeAttribute('disabled');
+                        this.ui.summarizerButton.setAttribute('title', 'Switch to original text');
+                        if (svg) {
+                            svg.style.display = 'block';
+                            svg.innerHTML = `<path d="M20 6L9 17l-5-5"/>`;
+                        }
+                        if (progressText) {
+                            progressText.style.display = 'none';
+                        }
+                    } catch {}
+                }
+                this.isSummarizing = false;
+                return;
+            }
+
+            let completedCount = 0;
+
+            // Process only new markers that need summarization
+            for (let i = 0; i < markersNeedingSummary.length; i++) {
+                const marker = markersNeedingSummary[i];
+                const originalIndex = markerIndices[i];
+
+                try {
+                    const summary = await window.summarizerManager.summarize(marker.originalText || marker.summary);
+
+                    // Update the marker with AI summary
+                    marker.aiSummary = summary;
+                    marker.summary = summary;
 
                     // Update dot's aria-label if it exists
                     if (marker.dotElement) {
                         try {
-                            marker.dotElement.setAttribute('aria-label', summaries[i]);
+                            marker.dotElement.setAttribute('aria-label', summary);
                         } catch {}
                     }
+
+                    completedCount++;
+                } catch (error) {
+                    console.warn('[Timeline] Failed to summarize marker', originalIndex, error);
+                    completedCount++;
+                }
+
+                // Update progress percentage
+                const percentage = Math.round((completedCount / totalToProcess) * 100);
+                if (progressText) {
+                    progressText.textContent = `${percentage}%`;
                 }
             }
 
@@ -1711,6 +1825,9 @@ class TimelineManager {
                     }
                 } catch {}
             }
+
+            // Hide incremental button since all markers are now summarized
+            this.updateIncrementalSummarizeButton();
 
             // Force tooltip refresh if visible
             try {
