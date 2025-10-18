@@ -324,18 +324,29 @@ class TimelineManager {
         this.contentSpanPx = contentSpan;
 
         // Build markers with normalized position along conversation
+        // Preserve existing AI summaries from old markers
+        const oldMarkerMap = new Map(this.markerMap);
         this.markerMap.clear();
         this.markers = Array.from(userTurnElements).map(el => {
             const offsetFromStart = el.offsetTop - firstTurnOffset;
             let n = offsetFromStart / contentSpan;
             n = Math.max(0, Math.min(1, n));
             const originalText = this.normalizeText(el.textContent || '');
+            const id = el.dataset.turnId;
+
+            // Check if we have an existing marker with AI summary
+            const oldMarker = oldMarkerMap.get(id);
+            const aiSummary = oldMarker?.aiSummary || null;
+
+            // Use AI summary if we're in AI mode, otherwise use original
+            const summary = (this.useSummarization && aiSummary) ? aiSummary : originalText;
+
             const m = {
-                id: el.dataset.turnId,
+                id: id,
                 element: el,
-                summary: originalText,
+                summary: summary,
                 originalText: originalText,  // Keep original for fallback
-                aiSummary: null,  // Will be populated if AI summarization is used
+                aiSummary: aiSummary,  // Preserve existing AI summary
                 n,
                 baseN: n,
                 dotElement: null,
