@@ -4,7 +4,7 @@ class TimelineManager {
         this.conversationContainer = null;
         this.markers = [];
         this.activeTurnId = null;
-        this.ui = { timelineBar: null, tooltip: null };
+        this.ui = { timelineBar: null, tooltip: null, summarizerButton: null };
         this.isScrolling = false;
 
         this.mutationObserver = null;
@@ -32,6 +32,9 @@ class TimelineManager {
         this.measureCanvas = null;
         this.measureCtx = null;
         this.showRafId = null;
+        // AI Summarization state
+        this.useSummarization = false;
+        this.isSummarizing = false;
         // Long-canvas scrollable track (Linked mode)
         this.ui.track = null;
         this.ui.trackContent = null;
@@ -95,10 +98,26 @@ class TimelineManager {
     async init() {
         const elementsFound = await this.findCriticalElements();
         if (!elementsFound) return;
-        
+
         this.injectTimelineUI();
         this.setupEventListeners();
         this.setupObservers();
+
+        // Initialize AI Summarizer
+        console.log('[Timeline] Attempting to initialize AI Summarizer...');
+        console.log('[Timeline] window.summarizerManager exists:', !!window.summarizerManager);
+        try {
+            if (window.summarizerManager) {
+                const initialized = await window.summarizerManager.initialize();
+                console.log('[Timeline] Summarizer initialized:', initialized);
+                console.log('[Timeline] Summarizer isAvailable:', window.summarizerManager.isAvailable);
+            } else {
+                console.warn('[Timeline] window.summarizerManager not found!');
+            }
+        } catch (error) {
+            console.error('[Timeline] Summarizer initialization error:', error);
+        }
+
         // Force an immediate first build so dots appear without waiting for mutations
         try { this.recalculateAndRenderMarkers(); } catch {}
         // Load persisted star markers for current conversation
@@ -178,6 +197,34 @@ class TimelineManager {
         }
         this.ui.slider = slider;
         this.ui.sliderHandle = slider.querySelector('.timeline-left-handle');
+
+        // Inject AI Summarizer button (positioned near the timeline bar)
+        if (!this.ui.summarizerButton) {
+            const summarizerBtn = document.createElement('button');
+            summarizerBtn.className = 'timeline-summarizer-button';
+            summarizerBtn.setAttribute('aria-label', 'Generate AI summaries for timeline');
+            summarizerBtn.setAttribute('title', 'Generate AI summaries');
+            summarizerBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              <path d="M8 10h8M8 14h4"/>
+            </svg>`;
+            document.body.appendChild(summarizerBtn);
+            this.ui.summarizerButton = summarizerBtn;
+
+            // Summarizer button click handler
+            summarizerBtn.addEventListener('click', async () => {
+                console.log('[Timeline] Summarizer button clicked');
+                console.log('[Timeline] isSummarizing:', this.isSummarizing);
+                console.log('[Timeline] markers count:', this.markers.length);
+                if (this.isSummarizing) {
+                    console.log('[Timeline] Already summarizing, skipping');
+                    return;
+                }
+                console.log('[Timeline] Starting summarization...');
+                await this.applySummarizationToAllMarkers();
+            });
+        }
+
         // Visibility will be controlled by updateSlider() based on scrollable state
         if (!this.ui.tooltip) {
             const tip = document.createElement('div');
@@ -266,10 +313,13 @@ class TimelineManager {
             const offsetFromStart = el.offsetTop - firstTurnOffset;
             let n = offsetFromStart / contentSpan;
             n = Math.max(0, Math.min(1, n));
+            const originalText = this.normalizeText(el.textContent || '');
             const m = {
                 id: el.dataset.turnId,
                 element: el,
-                summary: this.normalizeText(el.textContent || ''),
+                summary: originalText,
+                originalText: originalText,  // Keep original for fallback
+                aiSummary: null,  // Will be populated if AI summarization is used
                 n,
                 baseN: n,
                 dotElement: null,
@@ -1394,6 +1444,86 @@ class TimelineManager {
         this.pressTargetDot = null;
         this.pressStartPos = null;
         this.longPressTriggered = false;
+    }
+
+    // --- AI Summarization Methods ---
+    async applySummarizationToAllMarkers() {
+        console.log('[Timeline] applySummarizationToAllMarkers called');
+        console.log('[Timeline] window.summarizerManager exists:', !!window.summarizerManager);
+        console.log('[Timeline] summarizerManager.isAvailable:', window.summarizerManager?.isAvailable);
+
+        if (!window.summarizerManager || !window.summarizerManager.isAvailable) {
+            console.warn('[Timeline] Summarizer not available - window.summarizerManager:', !!window.summarizerManager, 'isAvailable:', window.summarizerManager?.isAvailable);
+            alert('AI Summarizer is not available. Make sure you are using Chrome 128+ with the AI features enabled.');
+            return;
+        }
+
+        if (this.isSummarizing) {
+            console.debug('[Timeline] Already summarizing');
+            return;
+        }
+
+        this.isSummarizing = true;
+
+        // Show loading state on button
+        if (this.ui.summarizerButton) {
+            try {
+                this.ui.summarizerButton.classList.add('summarizing');
+                this.ui.summarizerButton.setAttribute('disabled', 'true');
+            } catch {}
+        }
+
+        try {
+            console.debug('[Timeline] Starting AI summarization for', this.markers.length, 'markers');
+
+            // Collect all texts to summarize
+            const textsToSummarize = this.markers.map(m => m.originalText || m.summary);
+
+            // Batch summarize all texts
+            const summaries = await window.summarizerManager.summarizeBatch(textsToSummarize);
+
+            // Update markers with AI summaries
+            for (let i = 0; i < this.markers.length; i++) {
+                const marker = this.markers[i];
+                if (summaries[i]) {
+                    marker.aiSummary = summaries[i];
+                    marker.summary = summaries[i];
+
+                    // Update dot's aria-label if it exists
+                    if (marker.dotElement) {
+                        try {
+                            marker.dotElement.setAttribute('aria-label', summaries[i]);
+                        } catch {}
+                    }
+                }
+            }
+
+            this.useSummarization = true;
+            console.debug('[Timeline] AI summarization completed');
+
+            // Force tooltip refresh if visible
+            try {
+                if (this.ui.tooltip?.classList.contains('visible')) {
+                    const currentDot = this.ui.timelineBar?.querySelector('.timeline-dot:hover, .timeline-dot:focus');
+                    if (currentDot) {
+                        this.refreshTooltipForDot(currentDot);
+                    }
+                }
+            } catch {}
+
+        } catch (error) {
+            console.debug('[Timeline] Summarization failed:', error);
+        } finally {
+            this.isSummarizing = false;
+
+            // Remove loading state
+            if (this.ui.summarizerButton) {
+                try {
+                    this.ui.summarizerButton.classList.remove('summarizing');
+                    this.ui.summarizerButton.removeAttribute('disabled');
+                } catch {}
+            }
+        }
     }
 }
 

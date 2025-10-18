@@ -5,7 +5,7 @@
   "description": "Adds a navigation timeline to your ChatGPT, DeepSeek, and Gemini conversations for easy navigation.",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "会话时间轴"
+    "default_title": "Timeline Scroller"
   },
   "permissions": [
     "storage"
@@ -22,7 +22,7 @@
         "https://chatgpt.com/*",
         "https://chat.openai.com/*"
       ],
-      "js": ["content-chatgpt.js"],
+      "js": ["summarizer-utils.js", "content-chatgpt.js"],
       "css": ["styles-chatgpt.css"]
     },
     {

@@ -335,3 +335,52 @@ html.dark .timeline-left-slider::before { background: rgba(255,255,255,0.10); }
 }
 .timeline-left-slider .timeline-left-handle:hover { background: rgba(16,163,127,0.45); }
 .timeline-left-slider .timeline-left-handle:active { cursor: grabbing; }
+
+/* AI Summarizer Button */
+.timeline-summarizer-button {
+    position: fixed;
+    right: 72px; /* Position to the left of the timeline bar (52px bar + 20px gap) */
+    top: 20px; /* Position near the top for visibility */
+    width: 40px;
+    height: 40px;
+    background: var(--timeline-tooltip-bg);
+    border: 1px solid var(--timeline-tooltip-border);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: var(--timeline-tooltip-shadow);
+    transition: all 150ms ease;
+    z-index: 10000;
+    padding: 0;
+    color: var(--timeline-tooltip-text);
+}
+
+.timeline-summarizer-button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.08);
+}
+
+.timeline-summarizer-button:active {
+    transform: scale(0.98);
+}
+
+.timeline-summarizer-button[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.timeline-summarizer-button.summarizing {
+    animation: pulse-summarize 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-summarize {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.timeline-summarizer-button svg {
+    width: 20px;
+    height: 20px;
+}
