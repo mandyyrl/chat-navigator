@@ -254,6 +254,12 @@ class TimelineManager {
 
         // Create incremental summarize button (top-right corner)
         if (!this.ui.incrementalButton) {
+            // Clean up any existing stray buttons first
+            try {
+                const existingBtn = document.querySelector('.timeline-incremental-button');
+                if (existingBtn) existingBtn.remove();
+            } catch {}
+
             const incrementalBtn = document.createElement('button');
             incrementalBtn.className = 'timeline-incremental-button';
             incrementalBtn.setAttribute('aria-label', 'Summarize new messages');
@@ -1460,8 +1466,22 @@ class TimelineManager {
                 try { straySlider.remove(); } catch {}
             }
         } catch {}
+        // Remove summarizer button and incremental button
+        try { this.ui.summarizerButton?.remove(); } catch {}
+        try { this.ui.incrementalButton?.remove(); } catch {}
+        // Clean up any stray buttons
+        try {
+            const straySummarizer = document.querySelector('.timeline-summarizer-button');
+            if (straySummarizer) straySummarizer.remove();
+        } catch {}
+        try {
+            const strayIncremental = document.querySelector('.timeline-incremental-button');
+            if (strayIncremental) strayIncremental.remove();
+        } catch {}
         this.ui.slider = null;
         this.ui.sliderHandle = null;
+        this.ui.summarizerButton = null;
+        this.ui.incrementalButton = null;
         this.ui = { timelineBar: null, tooltip: null };
         this.markers = [];
         this.activeTurnId = null;
@@ -1636,11 +1656,10 @@ class TimelineManager {
 
         try {
             if (shouldShow) {
-                // Position button relative to summarizer button (mid-bottom, centered horizontally)
+                // Position button to the right of summarizer button (closer to timeline bar), vertically centered
                 const summarizerRect = this.ui.summarizerButton.getBoundingClientRect();
-                const buttonWidth = this.ui.incrementalButton.offsetWidth || 30; // estimate if not rendered
-                this.ui.incrementalButton.style.top = `${summarizerRect.bottom - 2}px`;
-                this.ui.incrementalButton.style.left = `${summarizerRect.left + (summarizerRect.width / 2) - (buttonWidth / 2)}px`;
+                this.ui.incrementalButton.style.top = `${summarizerRect.top + (summarizerRect.height / 2) - 9}px`; // 9 = half of button height (18px)
+                this.ui.incrementalButton.style.left = `${summarizerRect.right + 6}px`; // 6px gap from summarizer button
 
                 // Update the count badge
                 const badge = this.ui.incrementalButton.querySelector('.count-badge');
