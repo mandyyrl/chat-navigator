@@ -119,11 +119,14 @@ class TimelineManager {
             console.error('[Timeline] Summarizer initialization error:', error);
         }
 
-        // Force an immediate first build so dots appear without waiting for mutations
-        try { this.recalculateAndRenderMarkers(); } catch {}
-        // Load persisted star markers for current conversation
+        // Load persisted star markers and summarization state for current conversation BEFORE building markers
         this.conversationId = this.extractConversationIdFromPath(location.pathname);
         this.loadStars();
+        await this.loadSummarizationState();
+
+        // Force an immediate first build so dots appear without waiting for mutations
+        try { this.recalculateAndRenderMarkers(); } catch {}
+
         // After loading stars, sync current markers/dots to reflect star state immediately
         try {
             for (let i = 0; i < this.markers.length; i++) {
@@ -142,7 +145,7 @@ class TimelineManager {
         } catch {}
         // Initial rendering will be triggered by observers; avoid duplicate delayed re-render
     }
-    
+
     async findCriticalElements() {
         const firstTurn = await this.waitForElement('article[data-turn-id]');
         if (!firstTurn) return false;
@@ -336,7 +339,13 @@ class TimelineManager {
 
             // Check if we have an existing marker with AI summary
             const oldMarker = oldMarkerMap.get(id);
-            const aiSummary = oldMarker?.aiSummary || null;
+            let aiSummary = oldMarker?.aiSummary || null;
+
+            // Apply pending summaries if available (from localStorage on page load)
+            if (!aiSummary && this._pendingSummaries && this._pendingSummaries[id]) {
+                aiSummary = this._pendingSummaries[id];
+                console.log(`[Timeline] Applied pending AI summary for marker ${id}:`, aiSummary);
+            }
 
             // Use AI summary if we're in AI mode, otherwise use original
             const summary = (this.useSummarization && aiSummary) ? aiSummary : originalText;
@@ -356,6 +365,12 @@ class TimelineManager {
             this.markerMap.set(m.id, m);
             return m;
         });
+
+        // Clear pending summaries after applying them
+        if (this._pendingSummaries) {
+            console.log('[Timeline] Cleared _pendingSummaries after applying to markers');
+            this._pendingSummaries = null;
+        }
         // Bump version after markers are rebuilt to invalidate concurrent passes
         this.markersVersion++;
 
@@ -1462,6 +1477,107 @@ class TimelineManager {
         try { localStorage.setItem(`chatgptTimelineStars:${cid}`, JSON.stringify(Array.from(this.starred))); } catch {}
     }
 
+    // Save AI summarization state for current conversation
+    saveSummarizationState() {
+        const cid = this.conversationId;
+        if (!cid) return;
+        try {
+            const state = {
+                summarizerState: this.summarizerState,
+                useSummarization: this.useSummarization,
+                summaries: {}
+            };
+            // Save AI summaries for each marker
+            for (const [id, marker] of this.markerMap.entries()) {
+                if (marker.aiSummary) {
+                    state.summaries[id] = marker.aiSummary;
+                }
+            }
+            localStorage.setItem(`chatgptTimelineSummaries:${cid}`, JSON.stringify(state));
+        } catch (error) {
+            console.debug('[Timeline] Failed to save summarization state:', error);
+        }
+    }
+
+    // Load AI summarization state for current conversation
+    async loadSummarizationState() {
+        const cid = this.conversationId;
+        if (!cid) return;
+        try {
+            const raw = localStorage.getItem(`chatgptTimelineSummaries:${cid}`);
+            if (!raw) {
+                console.log('[Timeline] No saved summarization state found for conversation', cid);
+                return;
+            }
+
+            const state = JSON.parse(raw);
+            if (!state) return;
+
+            console.log('[Timeline] Loading summarization state:', {
+                summarizerState: state.summarizerState,
+                useSummarization: state.useSummarization,
+                summariesCount: Object.keys(state.summaries || {}).length
+            });
+
+            // Restore state
+            this.summarizerState = state.summarizerState || 'idle';
+            this.useSummarization = state.useSummarization || false;
+
+            // Restore AI summaries to markers (markers may not be built yet, so we'll apply after recalc)
+            if (state.summaries && typeof state.summaries === 'object') {
+                // Store summaries temporarily to apply after markers are built
+                this._pendingSummaries = state.summaries;
+                console.log('[Timeline] Stored', Object.keys(state.summaries).length, 'AI summaries in _pendingSummaries');
+            }
+
+            // Update button UI to reflect restored state
+            this.updateSummarizerButtonUI();
+        } catch (error) {
+            console.error('[Timeline] Failed to load summarization state:', error);
+        }
+    }
+
+    // Update summarizer button UI based on current state
+    updateSummarizerButtonUI() {
+        if (!this.ui.summarizerButton) return;
+
+        const svg = this.ui.summarizerButton.querySelector('svg');
+        const progressText = this.ui.summarizerButton.querySelector('.progress-text');
+
+        try {
+            // Remove all state classes first
+            this.ui.summarizerButton.classList.remove('idle', 'processing', 'completed', 'original');
+
+            // Hide progress text by default
+            if (progressText) progressText.style.display = 'none';
+            if (svg) svg.style.display = 'block';
+
+            if (this.summarizerState === 'completed') {
+                this.ui.summarizerButton.classList.add('completed');
+                this.ui.summarizerButton.setAttribute('title', 'Switch to original text');
+                if (svg) {
+                    svg.innerHTML = `<path d="M20 6L9 17l-5-5"/>`;
+                }
+            } else if (this.summarizerState === 'original') {
+                this.ui.summarizerButton.classList.add('original');
+                this.ui.summarizerButton.setAttribute('title', 'Switch to AI summaries');
+                if (svg) {
+                    svg.innerHTML = `<path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/>`;
+                }
+            } else {
+                // idle state
+                this.ui.summarizerButton.classList.add('idle');
+                this.ui.summarizerButton.setAttribute('title', 'Generate AI summaries');
+                if (svg) {
+                    svg.innerHTML = `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                      <path d="M8 10h8M8 14h4"/>`;
+                }
+            }
+        } catch (error) {
+            console.debug('[Timeline] Failed to update button UI:', error);
+        }
+    }
+
     toggleStar(turnId) {
         const id = String(turnId || '');
         if (!id) return;
@@ -1575,6 +1691,9 @@ class TimelineManager {
             this.summarizerState = 'completed';
             console.debug('[Timeline] AI summarization completed');
 
+            // Save summarization state to localStorage
+            this.saveSummarizationState();
+
             // Update button to completed state (green with checkmark)
             if (this.ui.summarizerButton) {
                 try {
@@ -1647,6 +1766,9 @@ class TimelineManager {
         this.useSummarization = false;
         this.summarizerState = 'original';
 
+        // Save summarization state to localStorage
+        this.saveSummarizationState();
+
         // Update button state
         const svg = this.ui.summarizerButton?.querySelector('svg');
         if (this.ui.summarizerButton) {
@@ -1692,6 +1814,9 @@ class TimelineManager {
 
         this.useSummarization = true;
         this.summarizerState = 'completed';
+
+        // Save summarization state to localStorage
+        this.saveSummarizationState();
 
         // Update button back to completed state
         const svg = this.ui.summarizerButton?.querySelector('svg');
