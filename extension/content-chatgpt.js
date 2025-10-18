@@ -35,6 +35,7 @@ class TimelineManager {
         // AI Summarization state
         this.useSummarization = false;
         this.isSummarizing = false;
+        this.summarizerState = 'idle'; // 'idle', 'processing', 'completed', 'original'
         // Long-canvas scrollable track (Linked mode)
         this.ui.track = null;
         this.ui.trackContent = null;
@@ -207,21 +208,36 @@ class TimelineManager {
             summarizerBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
               <path d="M8 10h8M8 14h4"/>
-            </svg>`;
+            </svg>
+            <span class="progress-text"></span>`;
             document.body.appendChild(summarizerBtn);
             this.ui.summarizerButton = summarizerBtn;
 
-            // Summarizer button click handler
+            // Summarizer button click handler with toggle functionality
             summarizerBtn.addEventListener('click', async () => {
                 console.log('[Timeline] Summarizer button clicked');
                 console.log('[Timeline] isSummarizing:', this.isSummarizing);
-                console.log('[Timeline] markers count:', this.markers.length);
+                console.log('[Timeline] summarizerState:', this.summarizerState);
+
                 if (this.isSummarizing) {
                     console.log('[Timeline] Already summarizing, skipping');
                     return;
                 }
-                console.log('[Timeline] Starting summarization...');
-                await this.applySummarizationToAllMarkers();
+
+                // Toggle functionality
+                if (this.summarizerState === 'idle') {
+                    // Generate AI summaries
+                    console.log('[Timeline] Starting summarization...');
+                    await this.applySummarizationToAllMarkers();
+                } else if (this.summarizerState === 'completed') {
+                    // Switch to original text
+                    console.log('[Timeline] Switching to original text...');
+                    this.switchToOriginalText();
+                } else if (this.summarizerState === 'original') {
+                    // Switch back to AI summaries (already cached)
+                    console.log('[Timeline] Switching back to AI summaries...');
+                    this.switchToAISummaries();
+                }
             });
         }
 
@@ -1464,23 +1480,53 @@ class TimelineManager {
         }
 
         this.isSummarizing = true;
+        this.summarizerState = 'processing';
 
-        // Show loading state on button
+        const progressText = this.ui.summarizerButton?.querySelector('.progress-text');
+        const svg = this.ui.summarizerButton?.querySelector('svg');
+
+        // Show processing state on button
         if (this.ui.summarizerButton) {
             try {
-                this.ui.summarizerButton.classList.add('summarizing');
+                this.ui.summarizerButton.classList.remove('idle', 'completed', 'original');
+                this.ui.summarizerButton.classList.add('processing');
                 this.ui.summarizerButton.setAttribute('disabled', 'true');
+                this.ui.summarizerButton.setAttribute('title', 'Processing summaries...');
+                // Hide icon, show percentage
+                if (svg) svg.style.display = 'none';
+                if (progressText) {
+                    progressText.style.display = 'block';
+                    progressText.textContent = '0%';
+                }
             } catch {}
         }
 
         try {
             console.debug('[Timeline] Starting AI summarization for', this.markers.length, 'markers');
 
-            // Collect all texts to summarize
             const textsToSummarize = this.markers.map(m => m.originalText || m.summary);
+            const totalCount = textsToSummarize.length;
+            let completedCount = 0;
 
-            // Batch summarize all texts
-            const summaries = await window.summarizerManager.summarizeBatch(textsToSummarize);
+            // Process summaries one by one to show progress
+            const summaries = [];
+            for (let i = 0; i < textsToSummarize.length; i++) {
+                try {
+                    const summary = await window.summarizerManager.summarize(textsToSummarize[i]);
+                    summaries.push(summary);
+                    completedCount++;
+
+                    // Update progress percentage
+                    const percentage = Math.round((completedCount / totalCount) * 100);
+                    if (progressText) {
+                        progressText.textContent = `${percentage}%`;
+                    }
+                } catch (error) {
+                    console.warn('[Timeline] Failed to summarize marker', i, error);
+                    summaries.push(null);
+                    completedCount++;
+                }
+            }
 
             // Update markers with AI summaries
             for (let i = 0; i < this.markers.length; i++) {
@@ -1499,7 +1545,26 @@ class TimelineManager {
             }
 
             this.useSummarization = true;
+            this.summarizerState = 'completed';
             console.debug('[Timeline] AI summarization completed');
+
+            // Update button to completed state (green with checkmark)
+            if (this.ui.summarizerButton) {
+                try {
+                    this.ui.summarizerButton.classList.remove('processing');
+                    this.ui.summarizerButton.classList.add('completed');
+                    this.ui.summarizerButton.removeAttribute('disabled');
+                    this.ui.summarizerButton.setAttribute('title', 'Switch to original text');
+                    // Show checkmark icon
+                    if (svg) {
+                        svg.style.display = 'block';
+                        svg.innerHTML = `<path d="M20 6L9 17l-5-5"/>`;
+                    }
+                    if (progressText) {
+                        progressText.style.display = 'none';
+                    }
+                } catch {}
+            }
 
             // Force tooltip refresh if visible
             try {
@@ -1513,17 +1578,117 @@ class TimelineManager {
 
         } catch (error) {
             console.debug('[Timeline] Summarization failed:', error);
-        } finally {
-            this.isSummarizing = false;
+            this.summarizerState = 'idle';
 
-            // Remove loading state
+            // Reset button state on error
             if (this.ui.summarizerButton) {
                 try {
-                    this.ui.summarizerButton.classList.remove('summarizing');
+                    this.ui.summarizerButton.classList.remove('processing', 'completed');
                     this.ui.summarizerButton.removeAttribute('disabled');
+                    this.ui.summarizerButton.setAttribute('title', 'Generate AI summaries');
+                    if (svg) {
+                        svg.style.display = 'block';
+                        svg.innerHTML = `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                          <path d="M8 10h8M8 14h4"/>`;
+                    }
+                    if (progressText) {
+                        progressText.style.display = 'none';
+                    }
+                } catch {}
+            }
+        } finally {
+            this.isSummarizing = false;
+        }
+    }
+
+    switchToOriginalText() {
+        console.log('[Timeline] Switching to original text');
+
+        // Update all markers to use original text
+        for (let i = 0; i < this.markers.length; i++) {
+            const marker = this.markers[i];
+            marker.summary = marker.originalText;
+
+            // Update dot's aria-label if it exists
+            if (marker.dotElement) {
+                try {
+                    marker.dotElement.setAttribute('aria-label', marker.originalText);
                 } catch {}
             }
         }
+
+        this.useSummarization = false;
+        this.summarizerState = 'original';
+
+        // Update button state
+        const svg = this.ui.summarizerButton?.querySelector('svg');
+        if (this.ui.summarizerButton) {
+            try {
+                this.ui.summarizerButton.classList.remove('completed');
+                this.ui.summarizerButton.classList.add('original');
+                this.ui.summarizerButton.setAttribute('title', 'Switch to AI summaries');
+                // Show original text icon (undo icon)
+                if (svg) {
+                    svg.innerHTML = `<path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/>`;
+                }
+            } catch {}
+        }
+
+        // Force tooltip refresh if visible
+        try {
+            if (this.ui.tooltip?.classList.contains('visible')) {
+                const currentDot = this.ui.timelineBar?.querySelector('.timeline-dot:hover, .timeline-dot:focus');
+                if (currentDot) {
+                    this.refreshTooltipForDot(currentDot);
+                }
+            }
+        } catch {}
+    }
+
+    switchToAISummaries() {
+        console.log('[Timeline] Switching back to AI summaries');
+
+        // Update all markers to use AI summaries (already cached)
+        for (let i = 0; i < this.markers.length; i++) {
+            const marker = this.markers[i];
+            if (marker.aiSummary) {
+                marker.summary = marker.aiSummary;
+
+                // Update dot's aria-label if it exists
+                if (marker.dotElement) {
+                    try {
+                        marker.dotElement.setAttribute('aria-label', marker.aiSummary);
+                    } catch {}
+                }
+            }
+        }
+
+        this.useSummarization = true;
+        this.summarizerState = 'completed';
+
+        // Update button back to completed state
+        const svg = this.ui.summarizerButton?.querySelector('svg');
+        if (this.ui.summarizerButton) {
+            try {
+                this.ui.summarizerButton.classList.remove('original');
+                this.ui.summarizerButton.classList.add('completed');
+                this.ui.summarizerButton.setAttribute('title', 'Switch to original text');
+                // Show checkmark icon
+                if (svg) {
+                    svg.innerHTML = `<path d="M20 6L9 17l-5-5"/>`;
+                }
+            } catch {}
+        }
+
+        // Force tooltip refresh if visible
+        try {
+            if (this.ui.tooltip?.classList.contains('visible')) {
+                const currentDot = this.ui.timelineBar?.querySelector('.timeline-dot:hover, .timeline-dot:focus');
+                if (currentDot) {
+                    this.refreshTooltipForDot(currentDot);
+                }
+            }
+        } catch {}
     }
 }
 
