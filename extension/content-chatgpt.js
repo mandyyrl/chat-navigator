@@ -820,10 +820,16 @@ class TimelineManager {
         const tip = this.ui.tooltip;
         tip.classList.remove('visible');
         let fullText = (dot.getAttribute('aria-label') || '').trim();
+        let isAISummary = false;
         try {
             const id = dot.dataset.targetTurnId;
             if (id && this.starred.has(id)) {
                 fullText = `★ ${fullText}`;
+            }
+            // Check if this marker has AI summary and we're in AI mode
+            const marker = this.markerMap.get(id);
+            if (marker && this.useSummarization && marker.aiSummary) {
+                isAISummary = true;
             }
         } catch {}
         const p = this.computePlacementInfo(dot);
@@ -831,6 +837,8 @@ class TimelineManager {
         tip.textContent = layout.text;
         this.placeTooltipAt(dot, p.placement, p.width, layout.height);
         tip.setAttribute('aria-hidden', 'false');
+        // Apply AI summary color class
+        tip.classList.toggle('ai-summary', isAISummary);
         // T1: next frame add visible for non-geometric animation only
         if (this.showRafId !== null) {
             try { cancelAnimationFrame(this.showRafId); } catch {}
@@ -914,14 +922,22 @@ class TimelineManager {
         if (!isVisible) return;
 
         let fullText = (dot.getAttribute('aria-label') || '').trim();
+        let isAISummary = false;
         try {
             const id = dot.dataset.targetTurnId;
             if (id && this.starred.has(id)) fullText = `★ ${fullText}`;
+            // Check if this marker has AI summary and we're in AI mode
+            const marker = this.markerMap.get(id);
+            if (marker && this.useSummarization && marker.aiSummary) {
+                isAISummary = true;
+            }
         } catch {}
         const p = this.computePlacementInfo(dot);
         const layout = this.truncateToThreeLines(fullText, p.width, true);
         tip.textContent = layout.text;
         this.placeTooltipAt(dot, p.placement, p.width, layout.height);
+        // Apply AI summary color class
+        tip.classList.toggle('ai-summary', isAISummary);
     }
 
     // --- Long-canvas geometry and virtualization (Linked mode) ---
