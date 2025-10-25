@@ -438,10 +438,10 @@ body.dark-theme .timeline-left-slider .timeline-left-handle:hover,
     animation: pulse-processing 1.5s ease-in-out infinite;
 }
 
-/* Completed state - green background with checkmark */
+/* Completed state - Gemini blue background with checkmark */
 .timeline-summarizer-button.completed {
-    background: linear-gradient(135deg, #10A37F, #0E8F6F);
-    border-color: #0E8F6F;
+    background: linear-gradient(135deg, #5684D1, #4A73BB);
+    border-color: #4A73BB;
     color: #FFFFFF;
 }
 
