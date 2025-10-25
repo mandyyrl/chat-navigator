@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Conversation Timeline",
-  "version": "3.0.0",
-  "description": "Adds a navigation timeline to your ChatGPT, DeepSeek, and Gemini conversations for easy navigation.",
+  "name": "Squirrel Jump",
+  "version": "1.0.0",
+  "description": "A chrome extension that enhances AI chatbot (ChatGPT, Gemini, etc.) interfaces with a smart scrollbar and timeline navigation. Easily jump to any message, leveraging built-in summarizer APIs for efficient content preview and enhanced browsing within a single chat",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "会话时间轴"
+    "default_title": "Squirrel Jump"
   },
   "permissions": [
     "storage"
@@ -22,21 +22,21 @@
         "https://chatgpt.com/*",
         "https://chat.openai.com/*"
       ],
-      "js": ["content-chatgpt.js"],
+      "js": ["prompt-utils.js", "content-chatgpt.js"],
       "css": ["styles-chatgpt.css"]
     },
     {
       "matches": [
         "https://chat.deepseek.com/*"
       ],
-      "js": ["content-deepseek.js"],
+      "js": ["prompt-utils.js", "content-deepseek.js"],
       "css": ["styles-deepseek.css"]
     },
     {
       "matches": [
         "https://gemini.google.com/*"
       ],
-      "js": ["content-gemini.js"],
+      "js": ["prompt-utils.js", "content-gemini.js"],
       "css": ["styles-gemini.css"]
     }
   ]
