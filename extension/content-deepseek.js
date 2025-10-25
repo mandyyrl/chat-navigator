@@ -143,7 +143,7 @@
 
       // Stage 8: active + tooltip + star
       this.activeIdx = -1;
-      this.ui = { tooltip: null };
+      this.ui = { tooltip: null, summarizerButton: null, incrementalButton: null };
       this.measureEl = null; // hidden measurer for tooltip truncation
       this.tooltipHideDelay = 100;
       this.tooltipHideTimer = null;
@@ -183,6 +183,12 @@
       this.resizeIdleTimer = null;
       this.resizeIdleDelay = 140;
       this.resizeIdleRICId = null;
+
+      // AI Summarization state
+      this.useSummarization = false;
+      this.isSummarizing = false;
+      this.summarizerState = 'idle'; // 'idle', 'processing', 'completed', 'original'
+      this._pendingSummaries = null;
     }
 
     async init() {
@@ -214,9 +220,22 @@
       // prepare tooltip + measurer
       this.ensureTooltip();
 
+      // Initialize AI Prompt Manager
+      try {
+        if (window.promptManager) {
+          await window.promptManager.initialize();
+        } else {
+          console.warn('[DeepseekTimeline] window.promptManager not found!');
+        }
+      } catch (error) {
+        console.error('[DeepseekTimeline] Prompt manager initialization error:', error);
+      }
+
       // stars per conversation
       this.conversationId = extractConversationIdFromPath(location.pathname);
       this.loadStars();
+      // Load summarization state BEFORE building markers
+      try { await this.loadSummarizationState(); } catch {}
 
       this.rebuildMarkers();
       this.attachObservers();
@@ -304,6 +323,69 @@
       }
       this.ui.slider = slider;
       this.ui.sliderHandle = slider.querySelector('.timeline-left-handle');
+
+      // Inject AI Summarizer button (positioned near the timeline bar)
+      if (!this.ui.summarizerButton) {
+        const summarizerBtn = document.createElement('button');
+        summarizerBtn.className = 'timeline-summarizer-button';
+        summarizerBtn.setAttribute('aria-label', 'Generate AI summaries for timeline');
+        summarizerBtn.setAttribute('title', 'Generate AI summaries');
+        summarizerBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          <path d="M8 10h8M8 14h4"/>
+        </svg>
+        <span class="progress-text"></span>`;
+        document.body.appendChild(summarizerBtn);
+        this.ui.summarizerButton = summarizerBtn;
+
+        // Summarizer button click handler with toggle functionality
+        summarizerBtn.addEventListener('click', async () => {
+          if (this.isSummarizing) return;
+
+          // Toggle functionality
+          if (this.summarizerState === 'idle') {
+            await this.applySummarizationToAllMarkers();
+          } else if (this.summarizerState === 'completed') {
+            // Check if there are new unsummarized markers
+            const hasUnsummarizedMarkers = this.markers.some(m => !m.aiSummary);
+            if (hasUnsummarizedMarkers) {
+              await this.applySummarizationToAllMarkers();
+            } else {
+              this.switchToOriginalText();
+            }
+          } else if (this.summarizerState === 'original') {
+            this.switchToAISummaries();
+          }
+        });
+      }
+
+      // Create incremental summarize button (top-right corner)
+      if (!this.ui.incrementalButton) {
+        // Clean up any existing stray buttons first
+        try {
+          const existingBtn = document.querySelector('.timeline-incremental-button');
+          if (existingBtn) existingBtn.remove();
+        } catch {}
+
+        const incrementalBtn = document.createElement('button');
+        incrementalBtn.className = 'timeline-incremental-button';
+        incrementalBtn.setAttribute('aria-label', 'Summarize new messages');
+        incrementalBtn.setAttribute('title', 'Summarize new messages');
+        incrementalBtn.style.display = 'none'; // Hidden by default, shown when needed
+        incrementalBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        <span class="count-badge">0</span>`;
+        document.body.appendChild(incrementalBtn);
+        this.ui.incrementalButton = incrementalBtn;
+
+        // Click handler: incrementally summarize new markers
+        incrementalBtn.addEventListener('click', async () => {
+          if (this.isSummarizing) return;
+          await this.applySummarizationToAllMarkers();
+        });
+      }
     }
 
     ensureTooltip() {
@@ -372,6 +454,16 @@
       this.firstOffset = firstY;
       this.spanPx = span;
 
+      // Preserve existing AI summaries from old markers
+      const oldMarkerMap = new Map();
+      try {
+        for (const oldMarker of this.markers) {
+          if (oldMarker?.id) {
+            oldMarkerMap.set(oldMarker.id, oldMarker);
+          }
+        }
+      } catch {}
+
       // build stable id using user text hash + ordinal (per session scan)
       const seen = new Map();
       this.markers = list.map((el) => {
@@ -385,8 +477,44 @@
           id = `${base}-${cnt}`;
           try { el.dataset.turnId = id; } catch {}
         }
-        return { id, el, n, baseN: n, dotElement: null, summary: normalizeText(el.textContent || ''), starred: this.starred.has(id) };
+
+        // Extract original text
+        const originalText = normalizeText(el.textContent || '');
+
+        // Check if we have an existing marker with AI summary
+        const oldMarker = oldMarkerMap.get(id);
+        let aiSummary = oldMarker?.aiSummary || null;
+
+        // Apply pending summaries if available (from localStorage on page load)
+        if (!aiSummary && this._pendingSummaries && this._pendingSummaries[id]) {
+          aiSummary = this._pendingSummaries[id];
+        }
+
+        // Use AI summary if we're in AI mode, otherwise use original
+        const summary = (this.useSummarization && aiSummary) ? aiSummary : originalText;
+
+        return {
+          id,
+          el,
+          n,
+          baseN: n,
+          dotElement: null,
+          summary: summary,
+          originalText: originalText,
+          aiSummary: aiSummary,
+          starred: this.starred.has(id)
+        };
       });
+
+      // Clear pending summaries after applying them
+      if (this._pendingSummaries) {
+        this._pendingSummaries = null;
+      }
+
+      // Check if there are unsummarized markers and update incremental button
+      if (this.summarizerState === 'completed' || this.summarizerState === 'original') {
+        try { this.updateIncrementalSummarizeButton(); } catch {}
+      }
 
       // bump version and compute geometry + virtual render
       this.markersVersion++;
@@ -1085,6 +1213,18 @@
     tip.classList.remove('visible');
     let fullText = (dot.getAttribute('aria-label') || '').trim();
     try { const id = dot.dataset.targetIdx; if (id && this.starred.has(id)) fullText = `★ ${fullText}`; } catch {}
+
+    // Add or remove 'ai-summary' class based on whether we're showing AI-generated text
+    try {
+      const id = dot.dataset.targetIdx;
+      const marker = this.markers.find(m => m.id === id);
+      if (marker && this.useSummarization && marker.aiSummary) {
+        tip.classList.add('ai-summary');
+      } else {
+        tip.classList.remove('ai-summary');
+      }
+    } catch {}
+
     const p = this.computePlacementInfo(dot);
     const layout = this.truncateToThreeLines(fullText, p.width, true);
     tip.textContent = layout.text;
@@ -1112,6 +1252,18 @@
     if (!tip.classList.contains('visible')) return;
     let fullText = (dot.getAttribute('aria-label') || '').trim();
     try { const id = dot.dataset.targetIdx; if (id && this.starred.has(id)) fullText = `★ ${fullText}`; } catch {}
+
+    // Add or remove 'ai-summary' class based on whether we're showing AI-generated text
+    try {
+      const id = dot.dataset.targetIdx;
+      const marker = this.markers.find(m => m.id === id);
+      if (marker && this.useSummarization && marker.aiSummary) {
+        tip.classList.add('ai-summary');
+      } else {
+        tip.classList.remove('ai-summary');
+      }
+    } catch {}
+
     const p = this.computePlacementInfo(dot);
     const layout = this.truncateToThreeLines(fullText, p.width, true);
     tip.textContent = layout.text;
@@ -1297,6 +1449,394 @@
     this.onSliderMove = null;
     this.onSliderUp = null;
     this.hideSliderDeferred();
+  };
+
+  // --- AI Summarization Methods ---
+
+  // Save AI summarization state for current conversation
+  DeepseekTimeline.prototype.saveSummarizationState = function() {
+    const cid = this.conversationId;
+    if (!cid) return;
+    try {
+      const state = {
+        summarizerState: this.summarizerState,
+        useSummarization: this.useSummarization,
+        summaries: {}
+      };
+      // Save AI summaries for each marker
+      for (const marker of this.markers) {
+        if (marker.aiSummary) {
+          state.summaries[marker.id] = marker.aiSummary;
+        }
+      }
+      localStorage.setItem(`deepseekTimelineSummaries:${cid}`, JSON.stringify(state));
+    } catch (error) {
+      console.debug('[DeepseekTimeline] Failed to save summarization state:', error);
+    }
+  };
+
+  // Load AI summarization state for current conversation
+  DeepseekTimeline.prototype.loadSummarizationState = async function() {
+    const cid = this.conversationId;
+    if (!cid) return;
+    try {
+      const raw = localStorage.getItem(`deepseekTimelineSummaries:${cid}`);
+      if (!raw) return;
+
+      const state = JSON.parse(raw);
+      if (!state) return;
+
+      // Restore state
+      this.summarizerState = state.summarizerState || 'idle';
+      this.useSummarization = state.useSummarization || false;
+
+      // Restore AI summaries to markers (markers may not be built yet, so we'll apply after recalc)
+      if (state.summaries && typeof state.summaries === 'object') {
+        this._pendingSummaries = state.summaries;
+      }
+
+      // Update button UI to reflect restored state
+      this.updateSummarizerButtonUI();
+    } catch (error) {
+      console.error('[DeepseekTimeline] Failed to load summarization state:', error);
+    }
+  };
+
+  // Update summarizer button UI based on current state
+  DeepseekTimeline.prototype.updateSummarizerButtonUI = function() {
+    if (!this.ui.summarizerButton) return;
+
+    const svg = this.ui.summarizerButton.querySelector('svg');
+    const progressText = this.ui.summarizerButton.querySelector('.progress-text');
+
+    try {
+      // Remove all state classes first
+      this.ui.summarizerButton.classList.remove('idle', 'processing', 'completed', 'original');
+
+      // Hide progress text by default
+      if (progressText) progressText.style.display = 'none';
+      if (svg) svg.style.display = 'block';
+
+      if (this.summarizerState === 'completed') {
+        this.ui.summarizerButton.classList.add('completed');
+        this.ui.summarizerButton.setAttribute('title', 'Switch to original text');
+        if (svg) {
+          svg.innerHTML = `<path d="M20 6L9 17l-5-5"/>`;
+        }
+      } else if (this.summarizerState === 'original') {
+        this.ui.summarizerButton.classList.add('original');
+        this.ui.summarizerButton.setAttribute('title', 'Switch to AI summaries');
+        if (svg) {
+          svg.innerHTML = `<path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/>`;
+        }
+      } else {
+        // idle state
+        this.ui.summarizerButton.classList.add('idle');
+        this.ui.summarizerButton.setAttribute('title', 'Generate AI summaries');
+        if (svg) {
+          svg.innerHTML = `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            <path d="M8 10h8M8 14h4"/>`;
+        }
+      }
+    } catch (error) {
+      console.debug('[DeepseekTimeline] Failed to update button UI:', error);
+    }
+  };
+
+  // Update incremental summarize button (shows count of unsummarized markers)
+  DeepseekTimeline.prototype.updateIncrementalSummarizeButton = function() {
+    // Count markers that don't have AI summaries
+    const unsummarizedCount = this.markers.filter(m => !m.aiSummary).length;
+    const summarizedCount = this.markers.filter(m => m.aiSummary).length;
+
+    // Only show if:
+    // 1. We've completed at least one full summarization (state is 'completed' or 'original')
+    // 2. There are some markers WITH AI summaries (meaning we did summarize before)
+    // 3. There are NEW markers without AI summaries
+    const shouldShow = (this.summarizerState === 'completed' || this.summarizerState === 'original')
+                      && summarizedCount > 0
+                      && unsummarizedCount > 0;
+
+    if (!this.ui.incrementalButton || !this.ui.summarizerButton) return;
+
+    try {
+      if (shouldShow) {
+        // Position button to the right of summarizer button (closer to timeline bar), vertically centered
+        const summarizerRect = this.ui.summarizerButton.getBoundingClientRect();
+        this.ui.incrementalButton.style.top = `${summarizerRect.top + (summarizerRect.height / 2) - 9}px`; // 9 = half of button height (18px)
+        this.ui.incrementalButton.style.left = `${summarizerRect.right + 6}px`; // 6px gap from summarizer button
+
+        // Update the count badge
+        const badge = this.ui.incrementalButton.querySelector('.count-badge');
+        if (badge) {
+          badge.textContent = unsummarizedCount;
+        }
+        this.ui.incrementalButton.style.display = 'flex';
+        this.ui.incrementalButton.setAttribute('title', `Summarize ${unsummarizedCount} new message${unsummarizedCount > 1 ? 's' : ''}`);
+      } else {
+        this.ui.incrementalButton.style.display = 'none';
+      }
+    } catch (error) {
+      console.debug('[DeepseekTimeline] Failed to update incremental summarize button:', error);
+    }
+  };
+
+  DeepseekTimeline.prototype.applySummarizationToAllMarkers = async function() {
+    if (!window.promptManager || !window.promptManager.isAvailable) {
+      console.warn('[DeepseekTimeline] Prompt API not available');
+      alert('AI Prompt API is not available. Make sure you are using Chrome with the AI features enabled.');
+      return;
+    }
+
+    if (this.isSummarizing) return;
+
+    this.isSummarizing = true;
+    this.summarizerState = 'processing';
+
+    const progressText = this.ui.summarizerButton?.querySelector('.progress-text');
+    const svg = this.ui.summarizerButton?.querySelector('svg');
+
+    // Show processing state on button
+    if (this.ui.summarizerButton) {
+      try {
+        this.ui.summarizerButton.classList.remove('idle', 'completed', 'original');
+        this.ui.summarizerButton.classList.add('processing');
+        this.ui.summarizerButton.setAttribute('disabled', 'true');
+        this.ui.summarizerButton.setAttribute('title', 'Processing summaries...');
+        // Hide icon, show percentage
+        if (svg) svg.style.display = 'none';
+        if (progressText) {
+          progressText.style.display = 'block';
+          progressText.textContent = '0%';
+        }
+      } catch {}
+    }
+
+    try {
+      // Identify markers that need summarization (don't have AI summary yet)
+      const markersNeedingSummary = [];
+      const markerIndices = [];
+
+      for (let i = 0; i < this.markers.length; i++) {
+        if (!this.markers[i].aiSummary) {
+          markersNeedingSummary.push(this.markers[i]);
+          markerIndices.push(i);
+        }
+      }
+
+      const totalToProcess = markersNeedingSummary.length;
+
+      if (totalToProcess === 0) {
+        this.useSummarization = true;
+        this.summarizerState = 'completed';
+        this.saveSummarizationState();
+
+        // Update button immediately
+        if (this.ui.summarizerButton) {
+          try {
+            this.ui.summarizerButton.classList.remove('processing');
+            this.ui.summarizerButton.classList.add('completed');
+            this.ui.summarizerButton.removeAttribute('disabled');
+            this.ui.summarizerButton.setAttribute('title', 'Switch to original text');
+            if (svg) {
+              svg.style.display = 'block';
+              svg.innerHTML = `<path d="M20 6L9 17l-5-5"/>`;
+            }
+            if (progressText) {
+              progressText.style.display = 'none';
+            }
+          } catch {}
+        }
+        this.isSummarizing = false;
+        return;
+      }
+
+      let completedCount = 0;
+
+      // Process only new markers that need summarization
+      for (let i = 0; i < markersNeedingSummary.length; i++) {
+        const marker = markersNeedingSummary[i];
+        const originalIndex = markerIndices[i];
+
+        try {
+          const summary = await window.promptManager.summarize(marker.originalText || marker.summary);
+
+          // Update the marker with AI summary
+          marker.aiSummary = summary;
+          marker.summary = summary;
+
+          // Update dot's aria-label if it exists
+          if (marker.dotElement) {
+            try {
+              marker.dotElement.setAttribute('aria-label', summary);
+            } catch {}
+          }
+
+          completedCount++;
+        } catch (error) {
+          console.warn('[DeepseekTimeline] Failed to summarize marker', originalIndex, error);
+          completedCount++;
+        }
+
+        // Update progress percentage
+        const percentage = Math.round((completedCount / totalToProcess) * 100);
+        if (progressText) {
+          progressText.textContent = `${percentage}%`;
+        }
+      }
+
+      this.useSummarization = true;
+      this.summarizerState = 'completed';
+
+      // Save summarization state to localStorage
+      this.saveSummarizationState();
+
+      // Update button to completed state (green with checkmark)
+      if (this.ui.summarizerButton) {
+        try {
+          this.ui.summarizerButton.classList.remove('processing');
+          this.ui.summarizerButton.classList.add('completed');
+          this.ui.summarizerButton.removeAttribute('disabled');
+          this.ui.summarizerButton.setAttribute('title', 'Switch to original text');
+          // Show checkmark icon
+          if (svg) {
+            svg.style.display = 'block';
+            svg.innerHTML = `<path d="M20 6L9 17l-5-5"/>`;
+          }
+          if (progressText) {
+            progressText.style.display = 'none';
+          }
+        } catch {}
+      }
+
+      // Hide incremental button since all markers are now summarized
+      this.updateIncrementalSummarizeButton();
+
+      // Force tooltip refresh if visible
+      try {
+        if (this.ui.tooltip?.classList.contains('visible')) {
+          const currentDot = this.timelineBar?.querySelector('.timeline-dot:hover, .timeline-dot:focus');
+          if (currentDot) {
+            this.refreshTooltipForDot(currentDot);
+          }
+        }
+      } catch {}
+
+    } catch (error) {
+      console.debug('[DeepseekTimeline] Summarization failed:', error);
+      this.summarizerState = 'idle';
+
+      // Reset button state on error
+      if (this.ui.summarizerButton) {
+        try {
+          this.ui.summarizerButton.classList.remove('processing', 'completed');
+          this.ui.summarizerButton.removeAttribute('disabled');
+          this.ui.summarizerButton.setAttribute('title', 'Generate AI summaries');
+          if (svg) {
+            svg.style.display = 'block';
+            svg.innerHTML = `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              <path d="M8 10h8M8 14h4"/>`;
+          }
+          if (progressText) {
+            progressText.style.display = 'none';
+          }
+        } catch {}
+      }
+    } finally {
+      this.isSummarizing = false;
+    }
+  };
+
+  DeepseekTimeline.prototype.switchToOriginalText = function() {
+    // Update all markers to use original text
+    for (let i = 0; i < this.markers.length; i++) {
+      const marker = this.markers[i];
+      marker.summary = marker.originalText;
+
+      // Update dot's aria-label if it exists
+      if (marker.dotElement) {
+        try {
+          marker.dotElement.setAttribute('aria-label', marker.originalText);
+        } catch {}
+      }
+    }
+
+    this.useSummarization = false;
+    this.summarizerState = 'original';
+
+    // Save summarization state to localStorage
+    this.saveSummarizationState();
+
+    // Update button state
+    const svg = this.ui.summarizerButton?.querySelector('svg');
+    if (this.ui.summarizerButton) {
+      try {
+        this.ui.summarizerButton.classList.remove('completed');
+        this.ui.summarizerButton.classList.add('original');
+        this.ui.summarizerButton.setAttribute('title', 'Switch to AI summaries');
+        // Show original text icon (undo icon)
+        if (svg) {
+          svg.innerHTML = `<path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/>`;
+        }
+      } catch {}
+    }
+
+    // Force tooltip refresh if visible
+    try {
+      if (this.ui.tooltip?.classList.contains('visible')) {
+        const currentDot = this.timelineBar?.querySelector('.timeline-dot:hover, .timeline-dot:focus');
+        if (currentDot) {
+          this.refreshTooltipForDot(currentDot);
+        }
+      }
+    } catch {}
+  };
+
+  DeepseekTimeline.prototype.switchToAISummaries = function() {
+    // Update all markers to use AI summaries (already cached)
+    for (let i = 0; i < this.markers.length; i++) {
+      const marker = this.markers[i];
+      if (marker.aiSummary) {
+        marker.summary = marker.aiSummary;
+
+        // Update dot's aria-label if it exists
+        if (marker.dotElement) {
+          try {
+            marker.dotElement.setAttribute('aria-label', marker.aiSummary);
+          } catch {}
+        }
+      }
+    }
+
+    this.useSummarization = true;
+    this.summarizerState = 'completed';
+
+    // Save summarization state to localStorage
+    this.saveSummarizationState();
+
+    // Update button back to completed state
+    const svg = this.ui.summarizerButton?.querySelector('svg');
+    if (this.ui.summarizerButton) {
+      try {
+        this.ui.summarizerButton.classList.remove('original');
+        this.ui.summarizerButton.classList.add('completed');
+        this.ui.summarizerButton.setAttribute('title', 'Switch to original text');
+        // Show checkmark icon
+        if (svg) {
+          svg.innerHTML = `<path d="M20 6L9 17l-5-5"/>`;
+        }
+      } catch {}
+    }
+
+    // Force tooltip refresh if visible
+    try {
+      if (this.ui.tooltip?.classList.contains('visible')) {
+        const currentDot = this.timelineBar?.querySelector('.timeline-dot:hover, .timeline-dot:focus');
+        if (currentDot) {
+          this.refreshTooltipForDot(currentDot);
+        }
+      }
+    } catch {}
   };
 
   // --- Entry & SPA wiring (Stage 3) ---

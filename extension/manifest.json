@@ -29,7 +29,7 @@
       "matches": [
         "https://chat.deepseek.com/*"
       ],
-      "js": ["content-deepseek.js"],
+      "js": ["prompt-utils.js", "content-deepseek.js"],
       "css": ["styles-deepseek.css"]
     },
     {
