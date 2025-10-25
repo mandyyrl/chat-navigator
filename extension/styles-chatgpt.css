@@ -346,7 +346,7 @@ html.dark .timeline-left-slider::before { background: rgba(255,255,255,0.10); }
 /* AI Summarizer Button */
 .timeline-summarizer-button {
     position: fixed;
-    right: 72px; /* Position to the left of the timeline bar (52px bar + 20px gap) */
+    right: 50px; /* Position closer to the timeline bar (reduced from 72px) */
     top: 50%; /* Position in the vertical middle */
     transform: translateY(-50%);
     width: 40px;
