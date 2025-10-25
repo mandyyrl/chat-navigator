@@ -36,7 +36,7 @@
       "matches": [
         "https://gemini.google.com/*"
       ],
-      "js": ["content-gemini.js"],
+      "js": ["prompt-utils.js", "content-gemini.js"],
       "css": ["styles-gemini.css"]
     }
   ]
