@@ -104,15 +104,15 @@ class TimelineManager {
         this.setupEventListeners();
         this.setupObservers();
 
-        // Initialize AI Summarizer
+        // Initialize AI Prompt Manager
         try {
-            if (window.summarizerManager) {
-                await window.summarizerManager.initialize();
+            if (window.promptManager) {
+                await window.promptManager.initialize();
             } else {
-                console.warn('[Timeline] window.summarizerManager not found!');
+                console.warn('[Timeline] window.promptManager not found!');
             }
         } catch (error) {
-            console.error('[Timeline] Summarizer initialization error:', error);
+            console.error('[Timeline] Prompt manager initialization error:', error);
         }
 
         // Load persisted star markers and summarization state for current conversation BEFORE building markers
@@ -351,7 +351,7 @@ class TimelineManager {
             const offsetFromStart = el.offsetTop - firstTurnOffset;
             let n = offsetFromStart / contentSpan;
             n = Math.max(0, Math.min(1, n));
-            const originalText = this.normalizeText(el.textContent || '');
+            const originalText = this.extractFullText(el);
             const id = el.dataset.turnId;
 
             // Check if we have an existing marker with AI summary
@@ -810,6 +810,43 @@ class TimelineManager {
             return s;
         } catch {
             return '';
+        }
+    }
+
+    // Extract full text from a user message element, handling ChatGPT's text truncation
+    extractFullText(element) {
+        try {
+            // Method 1: Try to find specific content divs
+            const contentDivs = element.querySelectorAll('div[class*="text"], div[data-message-author-role="user"]');
+            if (contentDivs.length > 0) {
+                let fullText = '';
+                contentDivs.forEach(div => {
+                    const text = div.textContent || '';
+                    if (text.trim()) {
+                        fullText += (fullText ? ' ' : '') + text.trim();
+                    }
+                });
+                if (fullText) {
+                    const normalized = this.normalizeText(fullText);
+                    if (normalized.endsWith('...') || normalized.endsWith('…')) {
+                        console.warn('[Timeline] Text still truncated after extraction:', normalized.substring(0, 100) + '...');
+                    }
+                    return normalized;
+                }
+            }
+
+            // Method 2: Get all paragraph and div text
+            const allText = element.innerText || element.textContent || '';
+            const normalized = this.normalizeText(allText);
+
+            if (normalized.endsWith('...') || normalized.endsWith('…')) {
+                console.warn('[Timeline] Text appears truncated:', normalized.substring(0, 100) + '...');
+            }
+
+            return normalized;
+        } catch (error) {
+            console.debug('[Timeline] Error extracting full text:', error);
+            return this.normalizeText(element.textContent || '');
         }
     }
 
@@ -1669,9 +1706,9 @@ class TimelineManager {
 
     // --- AI Summarization Methods ---
     async applySummarizationToAllMarkers() {
-        if (!window.summarizerManager || !window.summarizerManager.isAvailable) {
-            console.warn('[Timeline] Summarizer not available');
-            alert('AI Summarizer is not available. Make sure you are using Chrome 128+ with the AI features enabled.');
+        if (!window.promptManager || !window.promptManager.isAvailable) {
+            console.warn('[Timeline] Prompt API not available');
+            alert('AI Prompt API is not available. Make sure you are using Chrome with the AI features enabled.');
             return;
         }
 
@@ -1746,7 +1783,7 @@ class TimelineManager {
                 const originalIndex = markerIndices[i];
 
                 try {
-                    const summary = await window.summarizerManager.summarize(marker.originalText || marker.summary);
+                    const summary = await window.promptManager.summarize(marker.originalText || marker.summary);
 
                     // Update the marker with AI summary
                     marker.aiSummary = summary;
