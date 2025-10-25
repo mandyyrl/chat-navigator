@@ -545,12 +545,26 @@
       try { this.timelineBar?.remove(); } catch {}
       try { this.ui.slider?.remove(); } catch {}
       try { this.ui.tooltip?.remove(); } catch {}
+      // Remove summarizer button and incremental button
+      try { this.ui.summarizerButton?.remove(); } catch {}
+      try { this.ui.incrementalButton?.remove(); } catch {}
+      // Clean up any stray buttons
+      try {
+        const straySummarizer = document.querySelector('.timeline-summarizer-button');
+        if (straySummarizer) straySummarizer.remove();
+      } catch {}
+      try {
+        const strayIncremental = document.querySelector('.timeline-incremental-button');
+        if (strayIncremental) strayIncremental.remove();
+      } catch {}
       this.timelineBar = null;
       this.track = null;
       this.trackContent = null;
       this.ui.slider = null;
       this.ui.sliderHandle = null;
       this.ui.tooltip = null;
+      this.ui.summarizerButton = null;
+      this.ui.incrementalButton = null;
       this.conversationContainer = null;
       this.scrollContainer = null;
       if (this.tooltipHideTimer) { try { clearTimeout(this.tooltipHideTimer); } catch {} this.tooltipHideTimer = null; }

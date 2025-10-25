@@ -662,6 +662,20 @@
       this.ui.slider = null;
       this.ui.sliderHandle = null;
       try { this.ui.tooltip?.remove(); } catch {}
+      // Remove summarizer button and incremental button
+      try { this.ui.summarizerButton?.remove(); } catch {}
+      try { this.ui.incrementalButton?.remove(); } catch {}
+      // Clean up any stray buttons
+      try {
+        const straySummarizer = document.querySelector('.timeline-summarizer-button');
+        if (straySummarizer) straySummarizer.remove();
+      } catch {}
+      try {
+        const strayIncremental = document.querySelector('.timeline-incremental-button');
+        if (strayIncremental) strayIncremental.remove();
+      } catch {}
+      this.ui.summarizerButton = null;
+      this.ui.incrementalButton = null;
       try { this.measureEl?.remove(); } catch {}
       try { window.removeEventListener('storage', this.onStorage); } catch {}
       this.timelineBar = null;
