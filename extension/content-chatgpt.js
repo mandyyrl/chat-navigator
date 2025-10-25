@@ -828,28 +828,26 @@ class TimelineManager {
     // Extract full text from a user message element, handling ChatGPT's text truncation
     extractFullText(element) {
         try {
-            // Method 1: Try to find specific content divs
-            const contentDivs = element.querySelectorAll('div[class*="text"], div[data-message-author-role="user"]');
-            if (contentDivs.length > 0) {
-                let fullText = '';
-                contentDivs.forEach(div => {
-                    const text = div.textContent || '';
-                    if (text.trim()) {
-                        fullText += (fullText ? ' ' : '') + text.trim();
-                    }
-                });
-                if (fullText) {
-                    const normalized = this.normalizeText(fullText);
-                    if (normalized.endsWith('...') || normalized.endsWith('…')) {
-                        console.warn('[Timeline] Text still truncated after extraction:', normalized.substring(0, 100) + '...');
-                    }
-                    return normalized;
+            // Use innerText for the most user-visible text (avoids hidden elements and duplicates)
+            // innerText respects CSS and doesn't include hidden content
+            let text = element.innerText || element.textContent || '';
+
+            const normalized = this.normalizeText(text);
+
+            // Check for common duplication patterns (same text repeated exactly)
+            const words = normalized.split(' ');
+            const halfLength = Math.floor(words.length / 2);
+
+            // If we have even number of words and first half equals second half, it's duplicated
+            if (words.length >= 4 && words.length % 2 === 0) {
+                const firstHalf = words.slice(0, halfLength).join(' ');
+                const secondHalf = words.slice(halfLength).join(' ');
+
+                if (firstHalf === secondHalf) {
+                    console.debug('[Timeline] Detected duplicate text, using first half only');
+                    return firstHalf;
                 }
             }
-
-            // Method 2: Get all paragraph and div text
-            const allText = element.innerText || element.textContent || '';
-            const normalized = this.normalizeText(allText);
 
             if (normalized.endsWith('...') || normalized.endsWith('…')) {
                 console.warn('[Timeline] Text appears truncated:', normalized.substring(0, 100) + '...');
