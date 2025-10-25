@@ -805,6 +805,10 @@ class TimelineManager {
         try {
             let s = String(text || '').replace(/\s+/g, ' ').trim();
 
+            // Strip "You said:" / "你说：" FIRST, before other processing
+            s = s.replace(/^\s*(you\s*said\s*[:：]?\s*)/i, '');
+            s = s.replace(/^\s*((你说|您说|你說|您說)\s*[:：]?\s*)/, '');
+
             // Remove timestamp patterns (e.g., "09:51 PM21:51", "9:41 PM21:41", "10:30 AM10:30")
             // Pattern: HH:MM followed by optional AM/PM, followed by optional 24-hour time
             s = s.replace(/\d{1,2}:\d{2}\s*(AM|PM|am|pm)?\d{1,2}:\d{2}/g, '');
@@ -812,32 +816,41 @@ class TimelineManager {
             // Remove standalone timestamps (e.g., "09:51 PM", "21:51")
             s = s.replace(/\d{1,2}:\d{2}\s*(AM|PM|am|pm)/g, '');
 
-            // Clean up PDF filenames (e.g., "Ladd+-+For+the+people...pdf PDF summarize" -> "[Ladd..people.pdf] summarize")
-            const pdfMatch = s.match(/([^\s]+\.pdf)\s*(PDF)?/i);
+            // Clean up PDF filenames (e.g., "Markus_Moya_DoingRace_Introduction.pdf" -> "[Markus..Intro]")
+            // Match filenames that may contain spaces, underscores, etc.
+            const pdfMatch = s.match(/(\S+(?:\s+\S+)*\.pdf)\s*(?:PDF)?/i);
             if (pdfMatch) {
                 let filename = pdfMatch[1];
 
                 // Decode URL-encoded characters
                 filename = filename.replace(/\+/g, ' ').replace(/%20/g, ' ');
 
-                // Shorten long filenames: keep first ~15 chars and last ~15 chars
-                if (filename.length > 35) {
-                    const nameWithoutExt = filename.slice(0, -4); // Remove .pdf
-                    const firstPart = nameWithoutExt.slice(0, 15).trim();
-                    const lastPart = nameWithoutExt.slice(-15).trim();
-                    filename = `${firstPart}..${lastPart}.pdf`;
+                // Shorten long filenames: keep only first and last word/token
+                const nameWithoutExt = filename.slice(0, -4); // Remove .pdf
+
+                // If filename is short (<15 chars), keep it as-is
+                if (nameWithoutExt.length < 15) {
+                    filename = nameWithoutExt;
+                } else {
+                    // Split by spaces, underscores, dashes, etc.
+                    const words = nameWithoutExt.split(/[\s_\-]+/).filter(w => w.length > 0);
+
+                    if (words.length > 2) {
+                        // Keep first and last word only
+                        filename = `${words[0]}..${words[words.length - 1]}`;
+                    } else if (words.length === 2) {
+                        filename = `${words[0]}..${words[1]}`;
+                    } else {
+                        filename = words[0] || nameWithoutExt;
+                    }
                 }
 
-                // Replace the PDF portion with bracketed version
+                // Replace the PDF portion with bracketed version (no .pdf extension)
                 s = s.replace(pdfMatch[0], `[${filename}]`);
             }
 
             // Clean up any extra whitespace created by removals
             s = s.replace(/\s+/g, ' ').trim();
-
-            // Strip only if it appears at the very start
-            s = s.replace(/^\s*(you\s*said\s*[:：]?\s*)/i, '');
-            s = s.replace(/^\s*((你说|您说|你說|您說)\s*[:：]?\s*)/, '');
 
             return s;
         } catch {
@@ -848,6 +861,9 @@ class TimelineManager {
     // Extract full text from a user message element, handling ChatGPT's text truncation
     extractFullText(element) {
         try {
+            // Check for uploaded images
+            const hasImage = element.querySelector('img[alt="Uploaded image"]') || element.querySelector('img');
+
             // Use innerText for the most user-visible text (avoids hidden elements and duplicates)
             // innerText respects CSS and doesn't include hidden content
             let text = element.innerText || element.textContent || '';
@@ -873,7 +889,10 @@ class TimelineManager {
                 console.warn('[Timeline] Text appears truncated:', normalized.substring(0, 100) + '...');
             }
 
-            return normalized;
+            // Prepend [IMAGE] if an image was detected
+            const result = hasImage ? `[IMAGE] ${normalized}` : normalized;
+
+            return result;
         } catch (error) {
             console.debug('[Timeline] Error extracting full text:', error);
             return this.normalizeText(element.textContent || '');

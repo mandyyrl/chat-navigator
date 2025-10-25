@@ -22,9 +22,9 @@ class PromptManager {
     this.TOP_K = 40;
 
     // System prompt to guide the AI for concise summaries
-    this.SYSTEM_PROMPT = `This is a part of the project: chat navigator that helps users navigate different messages in a chat with AI chatbot. 
+    this.SYSTEM_PROMPT = `This is a part of the project: chat navigator that helps users navigate different messages in a chat with AI chatbot.
     It needs to summarize and condense the user input message for easier navigation (instead of first few words of the request message).
-    Your job is to summarize what the user is REQUESTING from the AI chatbot. Describe the task/question, DON'T answer the question itself and DON'T give actual output. 
+    Your job is to summarize what the user is REQUESTING from the AI chatbot. Describe the task/question, DON'T answer the question itself and DON'T give actual output.
     Maximum 50-60 characters. Ultra-concise, plain text.
 
 Examples (target ~60 chars, max 80 chars):
@@ -37,16 +37,19 @@ Output: Chrome ext: AI chat summary to bullets/mindmaps
 Input: "write an email to my advisor that I hope him to help me fill the SSN application form"
 Output: Email advisor for SSN form help
 
-Input: "TypeError in semesterGrades due to attempting to concatenate a tuple with a string"
-Output: TypeError: tuple/string concat in semesterGrades
+Input: "are there still bugs? why it said timed out"
+Output: Bugs still exist? Why timed out?
+
+Input: "write a prompt that can generate this image"
+Output: Write prompt to generate image
 
 Rules:
 - Target ~60 characters, max 80-90 characters
-- Describe REQUEST/TASK only, don't answer
+- Describe the task/question directly, don't answer it
+- NO meta-language like "User asks", "User wants", "Question about"
 - Ultra-concise: use abbrevs (ext, API, etc)
-- One line, plain text
+- One line, plain text only
 - No "Subject:", "Hi", PRD, or document-like phrases
-- Keywords, colons, slashes only
 - No asterisks, bold, markdown, backticks`;
   }
 
@@ -200,10 +203,14 @@ Rules:
     }
 
     try {
-      // Construct the user prompt
-      const userPrompt = `Summarize what the user wants. Target ~60 chars, max 80 chars. Ultra-concise. Use abbrevs. Don't answer. Plain text only. Complete sentence, no ellipsis.
+      // Check for [IMAGE] prefix and strip it before summarization
+      const hasImagePrefix = normalizedText.startsWith('[IMAGE]');
+      const textToSummarize = hasImagePrefix ? normalizedText.slice(7).trim() : normalizedText;
 
-Text: ${normalizedText}
+      // Construct the user prompt
+      const userPrompt = `Summarize the request directly. Target ~60 chars, max 80 chars. Ultra-concise. Use abbrevs. Don't answer. Plain text only. Complete sentence, no ellipsis. No meta-language.
+
+Text: ${textToSummarize}
 
 Summary:`;
 
@@ -231,7 +238,11 @@ Summary:`;
         // Otherwise keep it even if over - better complete than truncated
       }
 
-      const result = trimmedSummary || this.truncateText(normalizedText, options.maxLength || 100);
+      // Prepend [IMAGE] back if it was present
+      let result = trimmedSummary || this.truncateText(textToSummarize, options.maxLength || 100);
+      if (hasImagePrefix) {
+        result = `[IMAGE] ${result}`;
+      }
 
       // Cache the result
       this.summaryCache.set(cacheKey, result);
