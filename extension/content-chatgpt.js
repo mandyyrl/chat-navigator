@@ -816,7 +816,7 @@ class TimelineManager {
             // Remove standalone timestamps (e.g., "09:51 PM", "21:51")
             s = s.replace(/\d{1,2}:\d{2}\s*(AM|PM|am|pm)/g, '');
 
-            // Clean up PDF filenames (e.g., "Markus_Moya_DoingRace_Introduction.pdf" -> "[Markus..Intro]")
+            // Clean up PDF filenames (e.g., "Markus_Moya_DoingRace_Introduction.pdf" -> "[Markus..Intro.pdf]")
             // Match filenames that may contain spaces, underscores, etc.
             const pdfMatch = s.match(/(\S+(?:\s+\S+)*\.pdf)\s*(?:PDF)?/i);
             if (pdfMatch) {
@@ -830,22 +830,22 @@ class TimelineManager {
 
                 // If filename is short (<15 chars), keep it as-is
                 if (nameWithoutExt.length < 15) {
-                    filename = nameWithoutExt;
+                    filename = `${nameWithoutExt}.pdf`;
                 } else {
                     // Split by spaces, underscores, dashes, etc.
                     const words = nameWithoutExt.split(/[\s_\-]+/).filter(w => w.length > 0);
 
                     if (words.length > 2) {
                         // Keep first and last word only
-                        filename = `${words[0]}..${words[words.length - 1]}`;
+                        filename = `${words[0]}..${words[words.length - 1]}.pdf`;
                     } else if (words.length === 2) {
-                        filename = `${words[0]}..${words[1]}`;
+                        filename = `${words[0]}..${words[1]}.pdf`;
                     } else {
-                        filename = words[0] || nameWithoutExt;
+                        filename = `${words[0] || nameWithoutExt}.pdf`;
                     }
                 }
 
-                // Replace the PDF portion with bracketed version (no .pdf extension)
+                // Replace the PDF portion with bracketed version (with .pdf extension)
                 s = s.replace(pdfMatch[0], `[${filename}]`);
             }
 

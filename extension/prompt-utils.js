@@ -203,9 +203,18 @@ Rules:
     }
 
     try {
-      // Check for [IMAGE] prefix and strip it before summarization
+      // Check for [IMAGE] or [*.pdf] prefix and strip it before summarization
       const hasImagePrefix = normalizedText.startsWith('[IMAGE]');
-      const textToSummarize = hasImagePrefix ? normalizedText.slice(7).trim() : normalizedText;
+      const pdfPrefixMatch = normalizedText.match(/^\[([^\]]+\.pdf)\]\s*/i);
+      const hasPdfPrefix = pdfPrefixMatch !== null;
+      const pdfPrefix = hasPdfPrefix ? pdfPrefixMatch[1] : '';
+
+      let textToSummarize = normalizedText;
+      if (hasImagePrefix) {
+        textToSummarize = normalizedText.slice(7).trim();
+      } else if (hasPdfPrefix) {
+        textToSummarize = normalizedText.slice(pdfPrefixMatch[0].length).trim();
+      }
 
       // Construct the user prompt
       const userPrompt = `Summarize the request directly. Target ~60 chars, max 80 chars. Ultra-concise. Use abbrevs. Don't answer. Plain text only. Complete sentence, no ellipsis. No meta-language.
@@ -238,10 +247,12 @@ Summary:`;
         // Otherwise keep it even if over - better complete than truncated
       }
 
-      // Prepend [IMAGE] back if it was present
+      // Prepend [IMAGE] or [PDF] back if it was present
       let result = trimmedSummary || this.truncateText(textToSummarize, options.maxLength || 100);
       if (hasImagePrefix) {
         result = `[IMAGE] ${result}`;
+      } else if (hasPdfPrefix) {
+        result = `[${pdfPrefix}] ${result}`;
       }
 
       // Cache the result
