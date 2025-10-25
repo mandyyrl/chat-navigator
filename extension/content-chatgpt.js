@@ -812,7 +812,27 @@ class TimelineManager {
             // Remove standalone timestamps (e.g., "09:51 PM", "21:51")
             s = s.replace(/\d{1,2}:\d{2}\s*(AM|PM|am|pm)/g, '');
 
-            // Clean up any extra whitespace created by timestamp removal
+            // Clean up PDF filenames (e.g., "Ladd+-+For+the+people...pdf PDF summarize" -> "[Ladd..people.pdf] summarize")
+            const pdfMatch = s.match(/([^\s]+\.pdf)\s*(PDF)?/i);
+            if (pdfMatch) {
+                let filename = pdfMatch[1];
+
+                // Decode URL-encoded characters
+                filename = filename.replace(/\+/g, ' ').replace(/%20/g, ' ');
+
+                // Shorten long filenames: keep first ~15 chars and last ~15 chars
+                if (filename.length > 35) {
+                    const nameWithoutExt = filename.slice(0, -4); // Remove .pdf
+                    const firstPart = nameWithoutExt.slice(0, 15).trim();
+                    const lastPart = nameWithoutExt.slice(-15).trim();
+                    filename = `${firstPart}..${lastPart}.pdf`;
+                }
+
+                // Replace the PDF portion with bracketed version
+                s = s.replace(pdfMatch[0], `[${filename}]`);
+            }
+
+            // Clean up any extra whitespace created by removals
             s = s.replace(/\s+/g, ' ').trim();
 
             // Strip only if it appears at the very start
