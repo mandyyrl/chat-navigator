@@ -1,57 +1,57 @@
 <p align="center">
-  <img src="public/preview.png" alt="Plugin Preview">
+  <img src="public/preview.png" alt="Squirrel Jump Preview">
 </p>
 
 # 🕰 Squirrel Jump - AI Chat Timeline Navigator
 
-> 🇨🇳 查看中文版：[README.zh-CN.md](./README.zh-CN.md)
+Chrome's built-in AI Prompt API now powers the timeline, turning every user prompt into a crisp headline you can scan at a glance.
 
-## 🙏 Acknowledgement
+## 🚀 What's New in This Branch
 
-This project is largely based on [ChatGPT Conversation Timeline](https://github.com/Reborn14/chatgpt-conversation-timeline) by [@Reborn14](https://github.com/Reborn14), which was inspired by the timeline navigation interface from Google AI Studio. We extend our gratitude for the excellent foundation and design.
-
----
+- Leverages Google Chrome's on-device `Prompt API` to headline every chat question in the timeline
+- Adds a floating "Generate AI summaries" control and an incremental refresh button for new messages
+- Caches summaries locally so repeat visits feel instant and offline-friendly
+- Falls back to smart truncation whenever the Prompt API is unavailable
 
 ## 📖 Overview
 
-Squirrel Jump enhances your AI chat experience by adding a smart scrollbar and interactive timeline to your conversations on **ChatGPT**, **DeepSeek**, and **Google Gemini**. Like a squirrel jumping from branch to branch, you can effortlessly navigate through your conversation history with a single click.
+Squirrel Jump augments your ChatGPT, DeepSeek, and Google Gemini conversations with an interactive timeline that keeps long threads manageable. Clickable markers mirror each exchange in the conversation, while AI-generated headlines help you understand context without scrolling.
 
-This extension provides:
-- **Interactive Timeline Navigation**: A visual timeline bar on the right side of your chat interface with clickable markers for each message
-- **AI-Powered Summarization**: Leverage Chrome's built-in AI Summarizer API to generate concise previews of messages
-- **Enhanced Navigation**: Quickly understand conversation structure and jump to any point instantly
+## 🤖 Chrome Prompt API Integration
 
----
+### Requirements
 
-## 🤖 Built-in AI Summarizer API
+- Chrome 138+
+- `chrome://flags/#optimization-guide-on-device-model` enabled so Chrome can download the on-device model (~1 GB)
+- Sufficient local storage to cache model files and timeline summaries
+- Extension permissions granted for the chat domains you want to summarize
 
-One of the standout features of Squirrel Jump is its integration with **Chrome's Built-in AI Summarizer API**. This experimental API allows the extension to:
+### How Summaries Are Generated
 
-- **Generate Message Previews**: Automatically create concise headlines for each message on the timeline
-- **On-Device Processing**: All summarization happens locally in your browser using Chrome's built-in AI model - no data is sent to external servers
-- **Incremental Summarization**: Summarize new messages as they appear in the conversation
-- **Smart Caching**: Summaries are cached to improve performance and reduce redundant processing
+- The first time you tap the AI button, Chrome may download the prompt model; progress is shown on the button
+- Headline-style summaries are produced locally with Chrome's Prompt API
+- Summaries are cached per message content hash, so revisiting the same thread is instant
+- If the API throws an error or is unsupported, the extension gracefully falls back to trimmed message text
 
-### How It Works
+### Using Summaries in the Timeline
 
-The extension uses the global `Summarizer` API (available in Chrome with AI features enabled):
+- Click the sparkle-style button floating beside the timeline to generate or toggle AI headlines
+- A smaller "Summarize new messages" badge appears when fresh messages arrive; tap it to headline just the new items
+- Toggle back to the original message text at any point if you prefer the raw content
+- All controls work independently per site, so you can enable summaries on ChatGPT but leave DeepSeek untouched
 
-The summarizer automatically downloads the required AI model on first use (if not already available) and processes all content locally on your device.
+## 🔒 Privacy & Local Processing
 
-### Requirements for AI Features
-
-- Chrome 127+ (Canary/Dev channel recommended for latest features)
-- Built-in AI features enabled (chrome://flags/#optimization-guide-on-device-model)
-- Sufficient disk space for the AI model (~1GB)
-
-> **Note**: Even without the AI Summarizer API, the extension still works perfectly - it will fall back to showing truncated message text.
+- Summarization never leaves your device; all prompts stay inside Chrome's sandboxed AI runtime
+- Cached summaries remain in local extension storage and can be cleared by Chrome whenever you reset site data
+- No additional external APIs, servers, or analytics are contacted by the summarizer flow
 
 ---
 
 ## ✨ Features
 
 - **🌐 Multi-Platform Support**: Works seamlessly on **ChatGPT**, **DeepSeek**, and **Google Gemini**
-- **🤖 AI-Powered Summaries**: Uses Chrome's built-in Summarizer API to generate concise message previews (when available)
+- **🤖 AI-Powered Summaries**: Uses Chrome's built-in Prompt API to generate concise message previews (when available)
 - **📍 Clickable Markers**: Instantly jump to any point in the conversation via clickable markers for each message
 - **⭐ Star Messages**: Long-press a message to star it, and see it highlighted on the timeline. Stars are saved locally and persist across sessions
 - **🌗 Auto-Theming**: Automatically adapts to the light/dark theme of each platform
@@ -62,13 +62,7 @@ The summarizer automatically downloads the required AI model on first use (if no
 
 ## 🧩 How to Install (Chrome / Edge)
 
-### ✅ Recommended: Install from Chrome Web Store
-
-👉 [Install from Chrome Web Store](https://chromewebstore.google.com/detail/ickndngbbabdllekmflaaogkpmnloalg?utm_source=item-share-cb)
-
----
-
-### 🛠 Manual Installation (Get new features faster)
+### 🛠 Manual Installation
 
 This method allows you to use the latest version immediately, without waiting for the Chrome Web Store review process.
 
@@ -78,11 +72,11 @@ This method allows you to use the latest version immediately, without waiting fo
 4. Click **“Load unpacked”**.
 5. Select the `extension/` folder to install.
 
-> After installation, open any ChatGPT, DeepSeek, or Gemini conversation and the timeline will appear on the right.
+> After installation, open any ChatGPT, DeepSeek, or Gemini conversation and the timeline and summarizing button will appear on the right.
 
 ## 🔗 Related Projects
 
-This project builds upon the excellent work of the open-source community. Special thanks to [@Reborn14](https://github.com/Reborn14) for the original implementation that inspired this enhanced version.
+This project builds upon the excellent work of the open-source community. Special thanks to [@Reborn14](https://github.com/Reborn14) for the original implementation that inspired this version.
 
 ---
 
