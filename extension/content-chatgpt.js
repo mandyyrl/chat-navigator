@@ -804,9 +804,21 @@ class TimelineManager {
     normalizeText(text) {
         try {
             let s = String(text || '').replace(/\s+/g, ' ').trim();
+
+            // Remove timestamp patterns (e.g., "09:51 PM21:51", "9:41 PM21:41", "10:30 AM10:30")
+            // Pattern: HH:MM followed by optional AM/PM, followed by optional 24-hour time
+            s = s.replace(/\d{1,2}:\d{2}\s*(AM|PM|am|pm)?\d{1,2}:\d{2}/g, '');
+
+            // Remove standalone timestamps (e.g., "09:51 PM", "21:51")
+            s = s.replace(/\d{1,2}:\d{2}\s*(AM|PM|am|pm)/g, '');
+
+            // Clean up any extra whitespace created by timestamp removal
+            s = s.replace(/\s+/g, ' ').trim();
+
             // Strip only if it appears at the very start
             s = s.replace(/^\s*(you\s*said\s*[:：]?\s*)/i, '');
             s = s.replace(/^\s*((你说|您说|你說|您說)\s*[:：]?\s*)/, '');
+
             return s;
         } catch {
             return '';
