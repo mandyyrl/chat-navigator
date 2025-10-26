@@ -200,6 +200,7 @@
       this.mutationObserver = null;
       this.rebuildTimer = null;
       // AI Summarization state
+      this.aiModeEnabled = true; // Will be loaded from storage
       this.useSummarization = false;
       this.isSummarizing = false;
       this.summarizerState = 'idle';
@@ -210,6 +211,16 @@
       // Wait until we see at least one user bubble before wiring
       const first = await waitForElement(SEL_USER_BUBBLE, 5000);
       if (!first) return;
+
+      // Load AI mode setting from storage
+      try {
+        const result = await chrome.storage.local.get({ aiModeEnabled: true });
+        this.aiModeEnabled = typeof result.aiModeEnabled === 'boolean' ? result.aiModeEnabled : true;
+      } catch (error) {
+        console.warn('[GeminiTimeline] Failed to load AI mode setting:', error);
+        this.aiModeEnabled = true; // Default to enabled
+      }
+
       // Bind conversation root & scroll container
       const root = findConversationRootFromFirst(first);
       this.conversationContainer = root || first.parentElement || document.body;
@@ -217,15 +228,17 @@
       this.conversationId = extractConversationIdFromPath(location.pathname);
       // Inject UI scaffold (no logic yet)
       this.injectUI();
-      // Initialize AI Prompt Manager
-      try {
-        if (window.promptManager) {
-          await window.promptManager.initialize();
-        } else {
-          console.warn('[GeminiTimeline] window.promptManager not found!');
+      // Initialize AI Prompt Manager only if AI mode is enabled
+      if (this.aiModeEnabled) {
+        try {
+          if (window.promptManager) {
+            await window.promptManager.initialize();
+          } else {
+            console.warn('[GeminiTimeline] window.promptManager not found!');
+          }
+        } catch (error) {
+          console.error('[GeminiTimeline] Prompt manager initialization error:', error);
         }
-      } catch (error) {
-        console.error('[GeminiTimeline] Prompt manager initialization error:', error);
       }
       // Load stars for this conversation (Phase 8)
       try { this.loadStars(); } catch {}
@@ -457,8 +470,8 @@
           this.measureEl = m;
         } catch {}
       }
-      // Inject AI Summarizer button (positioned near the timeline bar)
-      if (!this.ui.summarizerButton) {
+      // Inject AI Summarizer button only if AI mode is enabled
+      if (this.aiModeEnabled && !this.ui.summarizerButton) {
         const summarizerBtn = document.createElement('button');
         summarizerBtn.className = 'timeline-summarizer-button';
         summarizerBtn.setAttribute('aria-label', 'Generate AI summaries for timeline');
@@ -492,8 +505,8 @@
         });
       }
 
-      // Create incremental summarize button (top-right corner)
-      if (!this.ui.incrementalButton) {
+      // Create incremental summarize button only if AI mode is enabled
+      if (this.aiModeEnabled && !this.ui.incrementalButton) {
         // Clean up any existing stray buttons first
         try {
           const existingBtn = document.querySelector('.timeline-incremental-button');
@@ -727,17 +740,17 @@
         // Extract original text
         const originalText = this.extractUserSummary(el);
 
-        // Check if we have an existing marker with AI summary
+        // Check if we have an existing marker with AI summary (only if AI mode is enabled)
         const oldMarker = oldMarkerMap.get(id);
-        let aiSummary = oldMarker?.aiSummary || null;
+        let aiSummary = this.aiModeEnabled ? (oldMarker?.aiSummary || null) : null;
 
-        // Apply pending summaries if available (from localStorage on page load)
-        if (!aiSummary && this._pendingSummaries && this._pendingSummaries[id]) {
+        // Apply pending summaries if available (from localStorage on page load) - only if AI mode is enabled
+        if (this.aiModeEnabled && !aiSummary && this._pendingSummaries && this._pendingSummaries[id]) {
           aiSummary = this._pendingSummaries[id];
         }
 
-        // Use AI summary if we're in AI mode, otherwise use original
-        const summary = (this.useSummarization && aiSummary) ? aiSummary : originalText;
+        // Use AI summary if we're in AI mode and AI mode is enabled, otherwise use original
+        const summary = (this.aiModeEnabled && this.useSummarization && aiSummary) ? aiSummary : originalText;
 
         const marker = {
           id,
@@ -1932,6 +1945,73 @@
             providerEnabled = (typeof map.gemini === 'boolean') ? map.gemini : true;
             changed = true;
           } catch {}
+        }
+        if ('aiModeEnabled' in changes) {
+          const newAiModeEnabled = typeof changes.aiModeEnabled.newValue === 'boolean' ? changes.aiModeEnabled.newValue : true;
+          // Update AI mode and show/hide AI buttons
+          if (manager) {
+            const oldAiModeEnabled = manager.aiModeEnabled;
+            manager.aiModeEnabled = newAiModeEnabled;
+
+            if (oldAiModeEnabled !== newAiModeEnabled) {
+              // Show or hide AI summarizer buttons
+              if (newAiModeEnabled) {
+                // Reinitialize Prompt API when AI mode is turned back on
+                (async () => {
+                  try {
+                    if (window.promptManager) {
+                      await window.promptManager.initialize();
+                    }
+                  } catch (error) {
+                    console.error('[GeminiTimeline] Failed to reinitialize prompt manager:', error);
+                  }
+                })();
+
+                // Re-inject AI buttons if they don't exist
+                if (!manager.ui.summarizerButton) {
+                  manager.injectUI();
+                }
+                if (manager.ui.summarizerButton) {
+                  manager.ui.summarizerButton.style.display = '';
+                }
+                if (manager.ui.incrementalButton) {
+                  manager.ui.incrementalButton.style.display = manager.ui.incrementalButton.dataset.shouldShow === 'true' ? '' : 'none';
+                }
+                // If we have AI summaries, switch back to them
+                if (manager.summarizerState === 'completed' || manager.summarizerState === 'original') {
+                  manager.switchToAISummaries();
+                }
+              } else {
+                // Hide AI buttons and switch to original text
+                if (manager.ui.summarizerButton) {
+                  manager.ui.summarizerButton.style.display = 'none';
+                }
+                if (manager.ui.incrementalButton) {
+                  manager.ui.incrementalButton.style.display = 'none';
+                }
+                // Force all markers to show original text
+                manager.useSummarization = false;
+                for (let i = 0; i < manager.markers.length; i++) {
+                  const marker = manager.markers[i];
+                  marker.summary = marker.originalText;
+                  if (marker.dotElement) {
+                    try {
+                      marker.dotElement.setAttribute('aria-label', marker.originalText);
+                    } catch {}
+                  }
+                }
+                // Update tooltip if visible
+                try {
+                  if (manager.ui.tooltip?.classList.contains('visible')) {
+                    const currentDot = manager.timelineBar?.querySelector('.timeline-dot:hover, .timeline-dot:focus');
+                    if (currentDot) {
+                      manager.refreshTooltipForDot(currentDot);
+                    }
+                  }
+                } catch {}
+              }
+            }
+          }
         }
         if (!changed) return;
         const enabled = timelineActive && providerEnabled;

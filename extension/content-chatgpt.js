@@ -33,6 +33,7 @@ class TimelineManager {
         this.measureCtx = null;
         this.showRafId = null;
         // AI Summarization state
+        this.aiModeEnabled = true; // Will be loaded from storage
         this.useSummarization = false;
         this.isSummarizing = false;
         this.summarizerState = 'idle'; // 'idle', 'processing', 'completed', 'original'
@@ -100,19 +101,30 @@ class TimelineManager {
         const elementsFound = await this.findCriticalElements();
         if (!elementsFound) return;
 
+        // Load AI mode setting from storage
+        try {
+            const result = await chrome.storage.local.get({ aiModeEnabled: true });
+            this.aiModeEnabled = typeof result.aiModeEnabled === 'boolean' ? result.aiModeEnabled : true;
+        } catch (error) {
+            console.warn('[Timeline] Failed to load AI mode setting:', error);
+            this.aiModeEnabled = true; // Default to enabled
+        }
+
         this.injectTimelineUI();
         this.setupEventListeners();
         this.setupObservers();
 
-        // Initialize AI Prompt Manager
-        try {
-            if (window.promptManager) {
-                await window.promptManager.initialize();
-            } else {
-                console.warn('[Timeline] window.promptManager not found!');
+        // Initialize AI Prompt Manager only if AI mode is enabled
+        if (this.aiModeEnabled) {
+            try {
+                if (window.promptManager) {
+                    await window.promptManager.initialize();
+                } else {
+                    console.warn('[Timeline] window.promptManager not found!');
+                }
+            } catch (error) {
+                console.error('[Timeline] Prompt manager initialization error:', error);
             }
-        } catch (error) {
-            console.error('[Timeline] Prompt manager initialization error:', error);
         }
 
         // Load persisted star markers and summarization state for current conversation BEFORE building markers
@@ -198,8 +210,8 @@ class TimelineManager {
         this.ui.slider = slider;
         this.ui.sliderHandle = slider.querySelector('.timeline-left-handle');
 
-        // Inject AI Summarizer button (positioned near the timeline bar)
-        if (!this.ui.summarizerButton) {
+        // Inject AI Summarizer button only if AI mode is enabled
+        if (this.aiModeEnabled && !this.ui.summarizerButton) {
             const summarizerBtn = document.createElement('button');
             summarizerBtn.className = 'timeline-summarizer-button';
             summarizerBtn.setAttribute('aria-label', 'Generate AI summaries for timeline');
@@ -233,8 +245,8 @@ class TimelineManager {
             });
         }
 
-        // Create incremental summarize button (top-right corner)
-        if (!this.ui.incrementalButton) {
+        // Create incremental summarize button only if AI mode is enabled
+        if (this.aiModeEnabled && !this.ui.incrementalButton) {
             // Clean up any existing stray buttons first
             try {
                 const existingBtn = document.querySelector('.timeline-incremental-button');
@@ -354,17 +366,17 @@ class TimelineManager {
             const originalText = this.extractFullText(el);
             const id = el.dataset.turnId;
 
-            // Check if we have an existing marker with AI summary
+            // Check if we have an existing marker with AI summary (only if AI mode is enabled)
             const oldMarker = oldMarkerMap.get(id);
-            let aiSummary = oldMarker?.aiSummary || null;
+            let aiSummary = this.aiModeEnabled ? (oldMarker?.aiSummary || null) : null;
 
-            // Apply pending summaries if available (from localStorage on page load)
-            if (!aiSummary && this._pendingSummaries && this._pendingSummaries[id]) {
+            // Apply pending summaries if available (from localStorage on page load) - only if AI mode is enabled
+            if (this.aiModeEnabled && !aiSummary && this._pendingSummaries && this._pendingSummaries[id]) {
                 aiSummary = this._pendingSummaries[id];
             }
 
-            // Use AI summary if we're in AI mode, otherwise use original
-            const summary = (this.useSummarization && aiSummary) ? aiSummary : originalText;
+            // Use AI summary if we're in AI mode and AI mode is enabled, otherwise use original
+            const summary = (this.aiModeEnabled && this.useSummarization && aiSummary) ? aiSummary : originalText;
 
             const m = {
                 id: id,
@@ -2146,6 +2158,73 @@ try {
           providerEnabled = (typeof map.chatgpt === 'boolean') ? map.chatgpt : true;
           changed = true;
         } catch {}
+      }
+      if ('aiModeEnabled' in changes) {
+        const newAiModeEnabled = typeof changes.aiModeEnabled.newValue === 'boolean' ? changes.aiModeEnabled.newValue : true;
+        // Update AI mode and show/hide AI buttons
+        if (timelineManagerInstance) {
+          const oldAiModeEnabled = timelineManagerInstance.aiModeEnabled;
+          timelineManagerInstance.aiModeEnabled = newAiModeEnabled;
+
+          if (oldAiModeEnabled !== newAiModeEnabled) {
+            // Show or hide AI summarizer buttons
+            if (newAiModeEnabled) {
+              // Reinitialize Prompt API when AI mode is turned back on
+              (async () => {
+                try {
+                  if (window.promptManager) {
+                    await window.promptManager.initialize();
+                  }
+                } catch (error) {
+                  console.error('[Timeline] Failed to reinitialize prompt manager:', error);
+                }
+              })();
+
+              // Re-inject AI buttons if they don't exist
+              if (!timelineManagerInstance.ui.summarizerButton) {
+                timelineManagerInstance.injectTimelineUI();
+              }
+              if (timelineManagerInstance.ui.summarizerButton) {
+                timelineManagerInstance.ui.summarizerButton.style.display = '';
+              }
+              if (timelineManagerInstance.ui.incrementalButton) {
+                timelineManagerInstance.ui.incrementalButton.style.display = timelineManagerInstance.ui.incrementalButton.dataset.shouldShow === 'true' ? '' : 'none';
+              }
+              // If we have AI summaries, switch back to them
+              if (timelineManagerInstance.summarizerState === 'completed' || timelineManagerInstance.summarizerState === 'original') {
+                timelineManagerInstance.switchToAISummaries();
+              }
+            } else {
+              // Hide AI buttons and switch to original text
+              if (timelineManagerInstance.ui.summarizerButton) {
+                timelineManagerInstance.ui.summarizerButton.style.display = 'none';
+              }
+              if (timelineManagerInstance.ui.incrementalButton) {
+                timelineManagerInstance.ui.incrementalButton.style.display = 'none';
+              }
+              // Force all markers to show original text
+              timelineManagerInstance.useSummarization = false;
+              for (let i = 0; i < timelineManagerInstance.markers.length; i++) {
+                const marker = timelineManagerInstance.markers[i];
+                marker.summary = marker.originalText;
+                if (marker.dotElement) {
+                  try {
+                    marker.dotElement.setAttribute('aria-label', marker.originalText);
+                  } catch {}
+                }
+              }
+              // Update tooltip if visible
+              try {
+                if (timelineManagerInstance.ui.tooltip?.classList.contains('visible')) {
+                  const currentDot = timelineManagerInstance.ui.timelineBar?.querySelector('.timeline-dot:hover, .timeline-dot:focus');
+                  if (currentDot) {
+                    timelineManagerInstance.refreshTooltipForDot(currentDot);
+                  }
+                }
+              } catch {}
+            }
+          }
+        }
       }
       if (!changed) return;
       const enabled = timelineActive && providerEnabled;

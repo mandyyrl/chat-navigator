@@ -185,6 +185,7 @@
       this.resizeIdleRICId = null;
 
       // AI Summarization state
+      this.aiModeEnabled = true; // Will be loaded from storage
       this.useSummarization = false;
       this.isSummarizing = false;
       this.summarizerState = 'idle'; // 'idle', 'processing', 'completed', 'original'
@@ -194,6 +195,15 @@
     async init() {
       const firstMsg = await waitForElement(SEL_MSG, 5000);
       if (!firstMsg) return;
+
+      // Load AI mode setting from storage
+      try {
+        const result = await chrome.storage.local.get({ aiModeEnabled: true });
+        this.aiModeEnabled = typeof result.aiModeEnabled === 'boolean' ? result.aiModeEnabled : true;
+      } catch (error) {
+        console.warn('[DeepseekTimeline] Failed to load AI mode setting:', error);
+        this.aiModeEnabled = true; // Default to enabled
+      }
 
       // Find a conversation root that contains ALL messages (lowest common ancestor)
       let root = null;
@@ -220,15 +230,17 @@
       // prepare tooltip + measurer
       this.ensureTooltip();
 
-      // Initialize AI Prompt Manager
-      try {
-        if (window.promptManager) {
-          await window.promptManager.initialize();
-        } else {
-          console.warn('[DeepseekTimeline] window.promptManager not found!');
+      // Initialize AI Prompt Manager only if AI mode is enabled
+      if (this.aiModeEnabled) {
+        try {
+          if (window.promptManager) {
+            await window.promptManager.initialize();
+          } else {
+            console.warn('[DeepseekTimeline] window.promptManager not found!');
+          }
+        } catch (error) {
+          console.error('[DeepseekTimeline] Prompt manager initialization error:', error);
         }
-      } catch (error) {
-        console.error('[DeepseekTimeline] Prompt manager initialization error:', error);
       }
 
       // stars per conversation
@@ -324,8 +336,8 @@
       this.ui.slider = slider;
       this.ui.sliderHandle = slider.querySelector('.timeline-left-handle');
 
-      // Inject AI Summarizer button (positioned near the timeline bar)
-      if (!this.ui.summarizerButton) {
+      // Inject AI Summarizer button only if AI mode is enabled
+      if (this.aiModeEnabled && !this.ui.summarizerButton) {
         const summarizerBtn = document.createElement('button');
         summarizerBtn.className = 'timeline-summarizer-button';
         summarizerBtn.setAttribute('aria-label', 'Generate AI summaries for timeline');
@@ -359,8 +371,8 @@
         });
       }
 
-      // Create incremental summarize button (top-right corner)
-      if (!this.ui.incrementalButton) {
+      // Create incremental summarize button only if AI mode is enabled
+      if (this.aiModeEnabled && !this.ui.incrementalButton) {
         // Clean up any existing stray buttons first
         try {
           const existingBtn = document.querySelector('.timeline-incremental-button');
@@ -481,17 +493,17 @@
         // Extract original text
         const originalText = normalizeText(el.textContent || '');
 
-        // Check if we have an existing marker with AI summary
+        // Check if we have an existing marker with AI summary (only if AI mode is enabled)
         const oldMarker = oldMarkerMap.get(id);
-        let aiSummary = oldMarker?.aiSummary || null;
+        let aiSummary = this.aiModeEnabled ? (oldMarker?.aiSummary || null) : null;
 
-        // Apply pending summaries if available (from localStorage on page load)
-        if (!aiSummary && this._pendingSummaries && this._pendingSummaries[id]) {
+        // Apply pending summaries if available (from localStorage on page load) - only if AI mode is enabled
+        if (this.aiModeEnabled && !aiSummary && this._pendingSummaries && this._pendingSummaries[id]) {
           aiSummary = this._pendingSummaries[id];
         }
 
-        // Use AI summary if we're in AI mode, otherwise use original
-        const summary = (this.useSummarization && aiSummary) ? aiSummary : originalText;
+        // Use AI summary if we're in AI mode and AI mode is enabled, otherwise use original
+        const summary = (this.aiModeEnabled && this.useSummarization && aiSummary) ? aiSummary : originalText;
 
         return {
           id,
@@ -1981,6 +1993,7 @@
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'local' || !changes) return;
         let changed = false;
+        let aiModeChanged = false;
         if ('timelineActive' in changes) {
           timelineActive = !!changes.timelineActive.newValue;
           changed = true;
@@ -1991,6 +2004,74 @@
             providerEnabled = (typeof map.deepseek === 'boolean') ? map.deepseek : true;
             changed = true;
           } catch {}
+        }
+        if ('aiModeEnabled' in changes) {
+          aiModeChanged = true;
+          const newAiModeEnabled = typeof changes.aiModeEnabled.newValue === 'boolean' ? changes.aiModeEnabled.newValue : true;
+          // Update AI mode and show/hide AI buttons
+          if (manager) {
+            const oldAiModeEnabled = manager.aiModeEnabled;
+            manager.aiModeEnabled = newAiModeEnabled;
+
+            if (oldAiModeEnabled !== newAiModeEnabled) {
+              // Show or hide AI summarizer buttons
+              if (newAiModeEnabled) {
+                // Reinitialize Prompt API when AI mode is turned back on
+                (async () => {
+                  try {
+                    if (window.promptManager) {
+                      await window.promptManager.initialize();
+                    }
+                  } catch (error) {
+                    console.error('[DeepseekTimeline] Failed to reinitialize prompt manager:', error);
+                  }
+                })();
+
+                // Re-inject AI buttons if they don't exist
+                if (!manager.ui.summarizerButton) {
+                  manager.injectUI();
+                }
+                if (manager.ui.summarizerButton) {
+                  manager.ui.summarizerButton.style.display = '';
+                }
+                if (manager.ui.incrementalButton) {
+                  manager.ui.incrementalButton.style.display = manager.ui.incrementalButton.dataset.shouldShow === 'true' ? '' : 'none';
+                }
+                // If we have AI summaries, switch back to them
+                if (manager.summarizerState === 'completed' || manager.summarizerState === 'original') {
+                  manager.switchToAISummaries();
+                }
+              } else {
+                // Hide AI buttons and switch to original text
+                if (manager.ui.summarizerButton) {
+                  manager.ui.summarizerButton.style.display = 'none';
+                }
+                if (manager.ui.incrementalButton) {
+                  manager.ui.incrementalButton.style.display = 'none';
+                }
+                // Force all markers to show original text
+                manager.useSummarization = false;
+                for (let i = 0; i < manager.markers.length; i++) {
+                  const marker = manager.markers[i];
+                  marker.summary = marker.originalText;
+                  if (marker.dotElement) {
+                    try {
+                      marker.dotElement.setAttribute('aria-label', marker.originalText);
+                    } catch {}
+                  }
+                }
+                // Update tooltip if visible
+                try {
+                  if (manager.ui.tooltip?.classList.contains('visible')) {
+                    const currentDot = manager.timelineBar?.querySelector('.timeline-dot:hover, .timeline-dot:focus');
+                    if (currentDot) {
+                      manager.refreshTooltipForDot(currentDot);
+                    }
+                  }
+                } catch {}
+              }
+            }
+          }
         }
         if (!changed) return;
         const enabled = timelineActive && providerEnabled;

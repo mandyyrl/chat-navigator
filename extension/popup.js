@@ -6,10 +6,14 @@
     en: {
       'header.title': 'Conversation Timeline',
       'language.code': 'EN',
+      'aiMode.label': 'AI Mode',
+      'aiMode.helpLink': 'How to enable?',
       'section.websites': 'Websites',
+      'star.hint': 'Long press on timeline nodes to star messages',
       'github.text': 'Based On',
       'github.desc': 'This GitHub Project',
       'aria.globalToggle': 'Enable timeline for all sites',
+      'aria.aiModeToggle': 'Enable AI mode',
       'aria.chatgptToggle': 'Enable ChatGPT timeline',
       'aria.geminiToggle': 'Enable Gemini timeline',
       'aria.deepseekToggle': 'Enable DeepSeek timeline',
@@ -18,10 +22,14 @@
     zh: {
       'header.title': '会话时间轴',
       'language.code': '中文',
+      'aiMode.label': 'AI 模式',
+      'aiMode.helpLink': '如何启用？',
       'section.websites': '网站',
+      'star.hint': '长按时间轴节点可标记重要消息',
       'github.text': '基于',
       'github.desc': '此 GitHub 项目',
       'aria.globalToggle': '启用全部站点时间轴',
+      'aria.aiModeToggle': '启用 AI 模式',
       'aria.chatgptToggle': '启用 ChatGPT 时间轴',
       'aria.geminiToggle': '启用 Gemini 时间轴',
       'aria.deepseekToggle': '启用 DeepSeek 时间轴',
@@ -56,12 +64,13 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     const globalToggle = q('#globalToggle');
+    const aiModeToggle = q('#aiModeToggle');
     const providerToggle = q('#provider-chatgpt-toggle');
     const deepseekToggle = q('#provider-deepseek-toggle');
     const geminiToggle = q('#provider-gemini-toggle');
     const langToggle = q('#langToggle');
 
-    if (!globalToggle || !providerToggle || !deepseekToggle || !geminiToggle || !langToggle) return;
+    if (!globalToggle || !aiModeToggle || !providerToggle || !deepseekToggle || !geminiToggle || !langToggle) return;
 
     const applyGlobal = (val) => {
       globalToggle.checked = !!val;
@@ -69,6 +78,9 @@
       providerToggle.disabled = !val;
       deepseekToggle.disabled = !val;
       geminiToggle.disabled = !val;
+    };
+    const applyAIMode = (val) => {
+      aiModeToggle.checked = !!val;
     };
     const applyProvider = (val) => {
       providerToggle.checked = !!val;
@@ -85,9 +97,11 @@
       chrome.storage.local.get({
         timelineActive: true,
         timelineProviders: {},
+        aiModeEnabled: true, // Default to enabled
         language: 'en' // Default to English
       }, (res) => {
         const active = !!res.timelineActive;
+        const aiModeEnabled = typeof res.aiModeEnabled === 'boolean' ? res.aiModeEnabled : true;
         const chatgptVal = (res.timelineProviders && typeof res.timelineProviders.chatgpt === 'boolean') ? !!res.timelineProviders.chatgpt : true;
         const deepseekVal = (res.timelineProviders && typeof res.timelineProviders.deepseek === 'boolean') ? !!res.timelineProviders.deepseek : true;
         const geminiVal = (res.timelineProviders && typeof res.timelineProviders.gemini === 'boolean') ? !!res.timelineProviders.gemini : true;
@@ -96,6 +110,7 @@
         applyTranslations(currentLang);
 
         applyGlobal(active);
+        applyAIMode(aiModeEnabled);
         applyProvider(chatgptVal);
         applyDeepseek(deepseekVal);
         applyGemini(geminiVal);
@@ -120,6 +135,12 @@
       providerToggle.disabled = !enabled;
       deepseekToggle.disabled = !enabled;
       geminiToggle.disabled = !enabled;
+    });
+
+    // AI Mode toggle
+    aiModeToggle.addEventListener('change', () => {
+      const enabled = !!aiModeToggle.checked;
+      try { chrome.storage.local.set({ aiModeEnabled: enabled }); } catch {}
     });
 
     providerToggle.addEventListener('change', () => {

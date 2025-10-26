@@ -19,12 +19,29 @@ Squirrel Jump augments your ChatGPT, DeepSeek, and Google Gemini conversations w
 
 ## 🤖 Chrome Prompt API Integration
 
+<a name="enable-chrome-ai"></a>
+### 🔧 How to Enable Chrome's Built-in AI
+
+To use AI-powered message summaries, you need to enable Chrome's built-in Gemini Nano and Prompt API:
+
+**Step 1: Enable Gemini Nano and Prompt API**
+
+1. Navigate to `chrome://flags/#optimization-guide-on-device-model` and select **"Enabled BypassPerfRequirement"**
+   - This bypasses performance checks that might prevent Gemini Nano download
+2. Go to `chrome://flags/#prompt-api-for-gemini-nano` and select **"Enabled"**
+3. **Relaunch Chrome**
+
+**Step 2: Verify Installation**
+
+- After relaunch, Chrome will download the on-device model (~1 GB) in the background
+- The first time you click the AI summarize button, you may see a download progress indicator
+- Once ready, summaries will be generated instantly and locally on your device
+
 ### Requirements
 
-- Chrome 138+
-- `chrome://flags/#optimization-guide-on-device-model` enabled so Chrome can download the on-device model (~1 GB)
+- Chrome 138+ (Canary/Dev recommended for latest features)
+- ~1 GB of disk space for the on-device model
 - Sufficient local storage to cache model files and timeline summaries
-- Extension permissions granted for the chat domains you want to summarize
 
 ### How Summaries Are Generated
 
