@@ -177,6 +177,9 @@
       this.measureEl = null;
       this.tooltipHideDelay = 100;
       this.tooltipHideTimer = null;
+      this.currentHoveredDot = null;
+      this.isMouseOnLeft = false;
+      this.clearStateTimer = null;
       this.showRafId = null;
       this.truncateCache = new Map();
       // Phase 8: stars + long-press
@@ -438,6 +441,36 @@
         try { tip.style.boxSizing = 'border-box'; } catch {}
         document.body.appendChild(tip);
         this.ui.tooltip = tip;
+
+        // Add tooltip hover handlers to keep it visible when hovering
+        tip.addEventListener('mouseenter', () => {
+          // Cancel any pending state clear timer
+          if (this.clearStateTimer) {
+            clearTimeout(this.clearStateTimer);
+            this.clearStateTimer = null;
+          }
+
+          try { if (this.tooltipHideTimer) { clearTimeout(this.tooltipHideTimer); this.tooltipHideTimer = null; } } catch {}
+          // When entering tooltip, switch to original text
+          if (!this.isMouseOnLeft && this.currentHoveredDot) {
+            this.isMouseOnLeft = true;
+            this.updateTooltipTextForDot(this.currentHoveredDot);
+          }
+        });
+        tip.addEventListener('mouseleave', (e) => {
+          // Check if leaving to go back to the dot
+          const toDot = e.relatedTarget?.closest?.('.timeline-dot');
+          if (toDot && toDot === this.currentHoveredDot) {
+            // Going back to dot, switch back to summary
+            this.isMouseOnLeft = false;
+            this.updateTooltipTextForDot(this.currentHoveredDot);
+          } else {
+            // Leaving entirely, hide tooltip
+            this.hideTooltip();
+            this.currentHoveredDot = null;
+            this.isMouseOnLeft = false;
+          }
+        });
         // Create hidden measurer for truncation
         try {
           const m = document.createElement('div');
@@ -538,6 +571,11 @@
       // Remove listeners
       try { this.timelineBar?.removeEventListener('click', this.onTimelineBarClick); } catch {}
       try { this.timelineBar?.removeEventListener('wheel', this.onTimelineWheel); } catch {}
+      try { this.timelineBar?.removeEventListener('mouseover', this.onTimelineBarOver); } catch {}
+      try { this.timelineBar?.removeEventListener('mouseout', this.onTimelineBarOut); } catch {}
+      try { this.timelineBar?.removeEventListener('mousemove', this.onTimelineBarMove); } catch {}
+      try { this.timelineBar?.removeEventListener('focusin', this.onTimelineBarFocusIn); } catch {}
+      try { this.timelineBar?.removeEventListener('focusout', this.onTimelineBarFocusOut); } catch {}
       try { this.timelineBar?.removeEventListener('pointerenter', this.onBarEnter); } catch {}
       try { this.timelineBar?.removeEventListener('pointerleave', this.onBarLeave); } catch {}
       try { this.ui.slider?.removeEventListener('pointerenter', this.onSliderEnter); } catch {}
@@ -581,6 +619,7 @@
       this.conversationContainer = null;
       this.scrollContainer = null;
       if (this.tooltipHideTimer) { try { clearTimeout(this.tooltipHideTimer); } catch {} this.tooltipHideTimer = null; }
+      if (this.clearStateTimer) { try { clearTimeout(this.clearStateTimer); } catch {} this.clearStateTimer = null; }
       if (this.sliderFadeTimer) { try { clearTimeout(this.sliderFadeTimer); } catch {} this.sliderFadeTimer = null; }
       if (this.longPressTimer) { try { clearTimeout(this.longPressTimer); } catch {} this.longPressTimer = null; }
       if (this.activeChangeTimer) { try { clearTimeout(this.activeChangeTimer); } catch {} this.activeChangeTimer = null; }
@@ -1104,13 +1143,48 @@
       this.onTimelineBarOut = (e) => {
         const fromDot = e.target.closest?.('.timeline-dot');
         const toDot = e.relatedTarget?.closest?.('.timeline-dot');
-        if (fromDot && !toDot) this.hideTooltip();
+
+        // Don't hide if moving from dot to another dot
+        if (fromDot && !toDot) {
+          // Use a delay before clearing state to give tooltip mouseenter time to fire
+          if (this.clearStateTimer) {
+            clearTimeout(this.clearStateTimer);
+          }
+          this.clearStateTimer = setTimeout(() => {
+            this.hideTooltip();
+            this.currentHoveredDot = null;
+            this.isMouseOnLeft = false;
+            this.clearStateTimer = null;
+          }, 200);
+        }
+      };
+      this.onTimelineBarMove = (e) => {
+        if (!this.currentHoveredDot || !this.ui.tooltip) return;
+
+        // Check if mouse is over the tooltip box
+        const tooltipRect = this.ui.tooltip.getBoundingClientRect();
+        const mouseX = e.clientX;
+        const mouseY = e.clientY;
+
+        const wasOnLeft = this.isMouseOnLeft;
+        this.isMouseOnLeft = (
+          mouseX >= tooltipRect.left &&
+          mouseX <= tooltipRect.right &&
+          mouseY >= tooltipRect.top &&
+          mouseY <= tooltipRect.bottom
+        );
+
+        // Only update if the state changed
+        if (wasOnLeft !== this.isMouseOnLeft) {
+          this.updateTooltipTextForDot(this.currentHoveredDot);
+        }
       };
       this.onTimelineBarFocusIn = (e) => { const dot = e.target.closest?.('.timeline-dot'); if (dot) this.showTooltipForDot(dot); };
       this.onTimelineBarFocusOut = (e) => { const dot = e.target.closest?.('.timeline-dot'); if (dot) this.hideTooltip(); };
       try {
         this.timelineBar.addEventListener('mouseover', this.onTimelineBarOver);
         this.timelineBar.addEventListener('mouseout', this.onTimelineBarOut);
+        this.timelineBar.addEventListener('mousemove', this.onTimelineBarMove);
         this.timelineBar.addEventListener('focusin', this.onTimelineBarFocusIn);
         this.timelineBar.addEventListener('focusout', this.onTimelineBarFocusOut);
       } catch {}
@@ -1357,16 +1431,41 @@
     showTooltipForDot(dot) {
       if (!this.ui.tooltip) return;
       try { if (this.tooltipHideTimer) { clearTimeout(this.tooltipHideTimer); this.tooltipHideTimer = null; } } catch {}
+
+      // Cancel any pending state clear timer
+      if (this.clearStateTimer) {
+        clearTimeout(this.clearStateTimer);
+        this.clearStateTimer = null;
+      }
+
+      // Track the current hovered dot
+      this.currentHoveredDot = dot;
+
       const tip = this.ui.tooltip;
       tip.classList.remove('visible');
       let fullText = (dot.getAttribute('aria-label') || '').trim();
-      try { const id = dot.dataset.targetIdx; if (id && this.starred.has(id)) fullText = `★ ${fullText}`; } catch {}
+      let isAISummary = false;
 
       // Add or remove 'ai-summary' class based on whether we're showing AI-generated text
       try {
         const id = dot.dataset.targetIdx;
         const marker = this.markers.find(m => m.id === id);
-        if (marker && this.useSummarization && marker.aiSummary) {
+
+        // Determine which text to show based on mouse position and AI mode
+        if (marker) {
+          // If user is hovering to the left and we're in AI mode, show original text
+          if (this.useSummarization && this.isMouseOnLeft && marker.originalText) {
+            fullText = marker.originalText;
+            isAISummary = false; // Not showing AI summary when on left
+          } else if (this.useSummarization && marker.aiSummary) {
+            // Normal behavior: show AI summary when in AI mode
+            isAISummary = true;
+          }
+        }
+
+        if (id && this.starred.has(id)) fullText = `★ ${fullText}`;
+
+        if (isAISummary) {
           tip.classList.add('ai-summary');
         } else {
           tip.classList.remove('ai-summary');
@@ -1401,6 +1500,44 @@
         const id = dot.dataset.targetIdx;
         const marker = this.markers.find(m => m.id === id);
         if (marker && this.useSummarization && marker.aiSummary) {
+          tip.classList.add('ai-summary');
+        } else {
+          tip.classList.remove('ai-summary');
+        }
+      } catch {}
+
+      const p = this.computePlacementInfo(dot);
+      const layout = this.truncateToThreeLines(fullText, p.width, true);
+      tip.textContent = layout.text;
+      this.placeTooltipAt(dot, p.placement, p.width, layout.height);
+    }
+
+    // Update tooltip text based on mouse position (hover-to-left feature)
+    updateTooltipTextForDot(dot) {
+      const tip = this.ui.tooltip;
+      if (!tip || !tip.classList.contains('visible')) return;
+
+      let fullText = (dot.getAttribute('aria-label') || '').trim();
+      let isAISummary = false;
+      try {
+        const id = dot.dataset.targetIdx;
+        const marker = this.markers.find(m => m.id === id);
+
+        // Determine which text to show based on mouse position and AI mode
+        if (marker) {
+          // If user is hovering to the left and we're in AI mode, show original text
+          if (this.useSummarization && this.isMouseOnLeft && marker.originalText) {
+            fullText = marker.originalText;
+            isAISummary = false; // Not showing AI summary when on left
+          } else if (this.useSummarization && marker.aiSummary) {
+            // Normal behavior: show AI summary when in AI mode
+            isAISummary = true;
+          }
+        }
+
+        if (id && this.starred.has(id)) fullText = `★ ${fullText}`;
+
+        if (isAISummary) {
           tip.classList.add('ai-summary');
         } else {
           tip.classList.remove('ai-summary');

@@ -24,7 +24,7 @@
     --timeline-tooltip-pad-x: 12px;
     --timeline-tooltip-border-w: 1px;
     --timeline-tooltip-arrow-size: 8px; /* square side before rotation */
-    --timeline-tooltip-arrow-outside: 6px; /* how much arrow protrudes outside */
+    --timeline-tooltip-arrow-outside: 3px; /* how much arrow protrudes outside */
     --timeline-tooltip-anim-in: 120ms cubic-bezier(0, 0, 0.2, 1);
     --timeline-tooltip-anim-out: 100ms linear;
 
@@ -37,8 +37,8 @@
     /* enlarged hit area for easier clicking */
     --timeline-hit-size: 30px;
     /* spacing model */
-    --timeline-tooltip-gap-visual: 12px; /* arrow tip to dot */
-    --timeline-tooltip-gap-box: 6px;     /* rectangle edge to timeline */
+    --timeline-tooltip-gap-visual: 4px;  /* arrow tip to dot */
+    --timeline-tooltip-gap-box: 2px;     /* rectangle edge to timeline */
     --timeline-hold-ms: 550ms; /* long-press duration */
 }
 
@@ -201,7 +201,7 @@ body.dark-theme,
       + 2 * var(--timeline-tooltip-border-w)
     );
     box-shadow: var(--timeline-tooltip-shadow);
-    pointer-events: none;
+    pointer-events: auto;
     z-index: 2147483647;
     /* Clamp to 3 lines; ellipsis only at end */
     display: -webkit-box;
@@ -411,7 +411,7 @@ body.dark-theme .timeline-left-slider .timeline-left-handle:hover,
     cursor: pointer;
     box-shadow: var(--timeline-tooltip-shadow);
     transition: all 150ms ease;
-    z-index: 10000;
+    z-index: 2147483647; /* Above tooltip to remain clickable */
     padding: 0;
     color: var(--timeline-tooltip-text);
 }
