@@ -20,6 +20,17 @@
         </div>
 
         <div class="content">
+          <div class="ai-mode-section">
+            <div class="ai-mode-item">
+              <div class="ai-mode-label-wrapper">
+                <div class="ai-mode-label-container">
+                  <span class="ai-mode-label" data-i18n="aiMode.label">AI Mode</span>
+                  <a href="https://github.com/mandyyrl/chat-navigator/blob/main/README.md#enable-chrome-ai" target="_blank" rel="noopener noreferrer" class="ai-mode-help-link" data-i18n="aiMode.helpLink" aria-label="Learn how to enable Chrome's built-in AI">How to enable?</a>
+                </div>
+              </div>
+              <input type="checkbox" id="aiModeToggle" class="switch" aria-label="Enable AI mode" data-i18n-aria="aria.aiModeToggle" />
+            </div>
+          </div>
           <div class="section-title" data-i18n="section.websites">Websites</div>
           <div class="providers">
             <div class="provider-item" data-providerid="chatgpt">
@@ -62,6 +73,14 @@
                 <input type="checkbox" id="provider-deepseek-toggle" class="switch" aria-label="Enable DeepSeek timeline" data-i18n-aria="aria.deepseekToggle" />
               </div>
             </div>
+          </div>
+
+          <div class="star-hint">
+            <svg class="star-icon-example starred" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/>
+              <circle cx="12" cy="12" r="6" fill="currentColor"/>
+            </svg>
+            <span class="star-hint-text" data-i18n="star.hint">Long press on timeline nodes to star messages</span>
           </div>
         </div>
 

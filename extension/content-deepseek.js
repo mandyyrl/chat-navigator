@@ -147,6 +147,9 @@
       this.measureEl = null; // hidden measurer for tooltip truncation
       this.tooltipHideDelay = 100;
       this.tooltipHideTimer = null;
+      this.currentHoveredDot = null;
+      this.isMouseOnLeft = false;
+      this.clearStateTimer = null;
       this.showRafId = null;
 
       // Long-press star
@@ -185,6 +188,7 @@
       this.resizeIdleRICId = null;
 
       // AI Summarization state
+      this.aiModeEnabled = true; // Will be loaded from storage
       this.useSummarization = false;
       this.isSummarizing = false;
       this.summarizerState = 'idle'; // 'idle', 'processing', 'completed', 'original'
@@ -194,6 +198,15 @@
     async init() {
       const firstMsg = await waitForElement(SEL_MSG, 5000);
       if (!firstMsg) return;
+
+      // Load AI mode setting from storage
+      try {
+        const result = await chrome.storage.local.get({ aiModeEnabled: true });
+        this.aiModeEnabled = typeof result.aiModeEnabled === 'boolean' ? result.aiModeEnabled : true;
+      } catch (error) {
+        console.warn('[DeepseekTimeline] Failed to load AI mode setting:', error);
+        this.aiModeEnabled = true; // Default to enabled
+      }
 
       // Find a conversation root that contains ALL messages (lowest common ancestor)
       let root = null;
@@ -220,15 +233,17 @@
       // prepare tooltip + measurer
       this.ensureTooltip();
 
-      // Initialize AI Prompt Manager
-      try {
-        if (window.promptManager) {
-          await window.promptManager.initialize();
-        } else {
-          console.warn('[DeepseekTimeline] window.promptManager not found!');
+      // Initialize AI Prompt Manager only if AI mode is enabled
+      if (this.aiModeEnabled) {
+        try {
+          if (window.promptManager) {
+            await window.promptManager.initialize();
+          } else {
+            console.warn('[DeepseekTimeline] window.promptManager not found!');
+          }
+        } catch (error) {
+          console.error('[DeepseekTimeline] Prompt manager initialization error:', error);
         }
-      } catch (error) {
-        console.error('[DeepseekTimeline] Prompt manager initialization error:', error);
       }
 
       // stars per conversation
@@ -324,8 +339,8 @@
       this.ui.slider = slider;
       this.ui.sliderHandle = slider.querySelector('.timeline-left-handle');
 
-      // Inject AI Summarizer button (positioned near the timeline bar)
-      if (!this.ui.summarizerButton) {
+      // Inject AI Summarizer button only if AI mode is enabled
+      if (this.aiModeEnabled && !this.ui.summarizerButton) {
         const summarizerBtn = document.createElement('button');
         summarizerBtn.className = 'timeline-summarizer-button';
         summarizerBtn.setAttribute('aria-label', 'Generate AI summaries for timeline');
@@ -359,8 +374,8 @@
         });
       }
 
-      // Create incremental summarize button (top-right corner)
-      if (!this.ui.incrementalButton) {
+      // Create incremental summarize button only if AI mode is enabled
+      if (this.aiModeEnabled && !this.ui.incrementalButton) {
         // Clean up any existing stray buttons first
         try {
           const existingBtn = document.querySelector('.timeline-incremental-button');
@@ -399,6 +414,36 @@
         try { tip.style.boxSizing = 'border-box'; } catch {}
         document.body.appendChild(tip);
         this.ui.tooltip = tip;
+
+        // Add tooltip hover handlers to keep it visible when hovering
+        tip.addEventListener('mouseenter', () => {
+          // Cancel any pending state clear timer
+          if (this.clearStateTimer) {
+            clearTimeout(this.clearStateTimer);
+            this.clearStateTimer = null;
+          }
+
+          try { if (this.tooltipHideTimer) { clearTimeout(this.tooltipHideTimer); this.tooltipHideTimer = null; } } catch {}
+          // When entering tooltip, switch to original text
+          if (!this.isMouseOnLeft && this.currentHoveredDot) {
+            this.isMouseOnLeft = true;
+            this.updateTooltipTextForDot(this.currentHoveredDot);
+          }
+        });
+        tip.addEventListener('mouseleave', (e) => {
+          // Check if leaving to go back to the dot
+          const toDot = e.relatedTarget?.closest?.('.timeline-dot');
+          if (toDot && toDot === this.currentHoveredDot) {
+            // Going back to dot, switch back to summary
+            this.isMouseOnLeft = false;
+            this.updateTooltipTextForDot(this.currentHoveredDot);
+          } else {
+            // Leaving entirely, hide tooltip
+            this.hideTooltip();
+            this.currentHoveredDot = null;
+            this.isMouseOnLeft = false;
+          }
+        });
       }
       if (!this.measureEl) {
         const m = document.createElement('div');
@@ -481,17 +526,17 @@
         // Extract original text
         const originalText = normalizeText(el.textContent || '');
 
-        // Check if we have an existing marker with AI summary
+        // Check if we have an existing marker with AI summary (only if AI mode is enabled)
         const oldMarker = oldMarkerMap.get(id);
-        let aiSummary = oldMarker?.aiSummary || null;
+        let aiSummary = this.aiModeEnabled ? (oldMarker?.aiSummary || null) : null;
 
-        // Apply pending summaries if available (from localStorage on page load)
-        if (!aiSummary && this._pendingSummaries && this._pendingSummaries[id]) {
+        // Apply pending summaries if available (from localStorage on page load) - only if AI mode is enabled
+        if (this.aiModeEnabled && !aiSummary && this._pendingSummaries && this._pendingSummaries[id]) {
           aiSummary = this._pendingSummaries[id];
         }
 
-        // Use AI summary if we're in AI mode, otherwise use original
-        const summary = (this.useSummarization && aiSummary) ? aiSummary : originalText;
+        // Use AI summary if we're in AI mode and AI mode is enabled, otherwise use original
+        const summary = (this.aiModeEnabled && this.useSummarization && aiSummary) ? aiSummary : originalText;
 
         return {
           id,
@@ -646,7 +691,7 @@
       try { if (this.resizeIdleRICId && typeof cancelIdleCallback === 'function') cancelIdleCallback(this.resizeIdleRICId); } catch {}
       if (this.activeChangeTimer) { try { clearTimeout(this.activeChangeTimer); } catch {} this.activeChangeTimer = null; }
       try { this.themeObserver?.disconnect(); } catch {}
-      this.onTimelineBarOver = this.onTimelineBarOut = this.onTimelineBarFocusIn = this.onTimelineBarFocusOut = null;
+      this.onTimelineBarOver = this.onTimelineBarOut = this.onTimelineBarMove = this.onTimelineBarFocusIn = this.onTimelineBarFocusOut = null;
       this.onPointerDown = this.onPointerMove = this.onPointerUp = this.onPointerCancel = this.onPointerLeave = null;
       this.onWindowResize = null;
 
@@ -662,6 +707,20 @@
       this.ui.slider = null;
       this.ui.sliderHandle = null;
       try { this.ui.tooltip?.remove(); } catch {}
+      // Remove summarizer button and incremental button
+      try { this.ui.summarizerButton?.remove(); } catch {}
+      try { this.ui.incrementalButton?.remove(); } catch {}
+      // Clean up any stray buttons
+      try {
+        const straySummarizer = document.querySelector('.timeline-summarizer-button');
+        if (straySummarizer) straySummarizer.remove();
+      } catch {}
+      try {
+        const strayIncremental = document.querySelector('.timeline-incremental-button');
+        if (strayIncremental) strayIncremental.remove();
+      } catch {}
+      this.ui.summarizerButton = null;
+      this.ui.incrementalButton = null;
       try { this.measureEl?.remove(); } catch {}
       try { window.removeEventListener('storage', this.onStorage); } catch {}
       this.timelineBar = null;
@@ -940,7 +999,41 @@
     this.onTimelineBarOut = (e) => {
       const fromDot = e.target.closest?.('.timeline-dot');
       const toDot = e.relatedTarget?.closest?.('.timeline-dot');
-      if (fromDot && !toDot) this.hideTooltip();
+
+      // Don't hide if moving from dot to another dot
+      if (fromDot && !toDot) {
+        // Use a delay before clearing state to give tooltip mouseenter time to fire
+        if (this.clearStateTimer) {
+          clearTimeout(this.clearStateTimer);
+        }
+        this.clearStateTimer = setTimeout(() => {
+          this.hideTooltip();
+          this.currentHoveredDot = null;
+          this.isMouseOnLeft = false;
+          this.clearStateTimer = null;
+        }, 200);
+      }
+    };
+    this.onTimelineBarMove = (e) => {
+      if (!this.currentHoveredDot || !this.ui.tooltip) return;
+
+      // Check if mouse is over the tooltip box
+      const tooltipRect = this.ui.tooltip.getBoundingClientRect();
+      const mouseX = e.clientX;
+      const mouseY = e.clientY;
+
+      const wasOnLeft = this.isMouseOnLeft;
+      this.isMouseOnLeft = (
+        mouseX >= tooltipRect.left &&
+        mouseX <= tooltipRect.right &&
+        mouseY >= tooltipRect.top &&
+        mouseY <= tooltipRect.bottom
+      );
+
+      // Only update if the state changed
+      if (wasOnLeft !== this.isMouseOnLeft) {
+        this.updateTooltipTextForDot(this.currentHoveredDot);
+      }
     };
     this.onTimelineBarFocusIn = (e) => {
       const dot = e.target.closest?.('.timeline-dot');
@@ -953,6 +1046,7 @@
     try {
       this.timelineBar.addEventListener('mouseover', this.onTimelineBarOver);
       this.timelineBar.addEventListener('mouseout', this.onTimelineBarOut);
+      this.timelineBar.addEventListener('mousemove', this.onTimelineBarMove);
       this.timelineBar.addEventListener('focusin', this.onTimelineBarFocusIn);
       this.timelineBar.addEventListener('focusout', this.onTimelineBarFocusOut);
       // Prevent native drag from causing horizontal wobble
@@ -1209,16 +1303,41 @@
   DeepseekTimeline.prototype.showTooltipForDot = function(dot) {
     if (!this.ui.tooltip) return;
     try { if (this.tooltipHideTimer) { clearTimeout(this.tooltipHideTimer); this.tooltipHideTimer = null; } } catch {}
+
+    // Cancel any pending state clear timer
+    if (this.clearStateTimer) {
+      clearTimeout(this.clearStateTimer);
+      this.clearStateTimer = null;
+    }
+
+    // Track the current hovered dot
+    this.currentHoveredDot = dot;
+
     const tip = this.ui.tooltip;
     tip.classList.remove('visible');
     let fullText = (dot.getAttribute('aria-label') || '').trim();
-    try { const id = dot.dataset.targetIdx; if (id && this.starred.has(id)) fullText = `★ ${fullText}`; } catch {}
+    let isAISummary = false;
 
     // Add or remove 'ai-summary' class based on whether we're showing AI-generated text
     try {
       const id = dot.dataset.targetIdx;
       const marker = this.markers.find(m => m.id === id);
-      if (marker && this.useSummarization && marker.aiSummary) {
+
+      // Determine which text to show based on mouse position and AI mode
+      if (marker) {
+        // If user is hovering to the left and we're in AI mode, show original text
+        if (this.useSummarization && this.isMouseOnLeft && marker.originalText) {
+          fullText = marker.originalText;
+          isAISummary = false; // Not showing AI summary when on left
+        } else if (this.useSummarization && marker.aiSummary) {
+          // Normal behavior: show AI summary when in AI mode
+          isAISummary = true;
+        }
+      }
+
+      if (id && this.starred.has(id)) fullText = `★ ${fullText}`;
+
+      if (isAISummary) {
         tip.classList.add('ai-summary');
       } else {
         tip.classList.remove('ai-summary');
@@ -1258,6 +1377,45 @@
       const id = dot.dataset.targetIdx;
       const marker = this.markers.find(m => m.id === id);
       if (marker && this.useSummarization && marker.aiSummary) {
+        tip.classList.add('ai-summary');
+      } else {
+        tip.classList.remove('ai-summary');
+      }
+    } catch {}
+
+    const p = this.computePlacementInfo(dot);
+    const layout = this.truncateToThreeLines(fullText, p.width, true);
+    tip.textContent = layout.text;
+    this.placeTooltipAt(dot, p.placement, p.width, layout.height);
+  };
+
+  // Update tooltip text based on mouse position (hover-to-left feature)
+  DeepseekTimeline.prototype.updateTooltipTextForDot = function(dot) {
+    if (!this.ui?.tooltip || !dot) return;
+    const tip = this.ui.tooltip;
+    if (!tip.classList.contains('visible')) return;
+
+    let fullText = (dot.getAttribute('aria-label') || '').trim();
+    let isAISummary = false;
+    try {
+      const id = dot.dataset.targetIdx;
+      const marker = this.markers.find(m => m.id === id);
+
+      // Determine which text to show based on mouse position and AI mode
+      if (marker) {
+        // If user is hovering to the left and we're in AI mode, show original text
+        if (this.useSummarization && this.isMouseOnLeft && marker.originalText) {
+          fullText = marker.originalText;
+          isAISummary = false; // Not showing AI summary when on left
+        } else if (this.useSummarization && marker.aiSummary) {
+          // Normal behavior: show AI summary when in AI mode
+          isAISummary = true;
+        }
+      }
+
+      if (id && this.starred.has(id)) fullText = `★ ${fullText}`;
+
+      if (isAISummary) {
         tip.classList.add('ai-summary');
       } else {
         tip.classList.remove('ai-summary');
@@ -1967,6 +2125,7 @@
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'local' || !changes) return;
         let changed = false;
+        let aiModeChanged = false;
         if ('timelineActive' in changes) {
           timelineActive = !!changes.timelineActive.newValue;
           changed = true;
@@ -1977,6 +2136,74 @@
             providerEnabled = (typeof map.deepseek === 'boolean') ? map.deepseek : true;
             changed = true;
           } catch {}
+        }
+        if ('aiModeEnabled' in changes) {
+          aiModeChanged = true;
+          const newAiModeEnabled = typeof changes.aiModeEnabled.newValue === 'boolean' ? changes.aiModeEnabled.newValue : true;
+          // Update AI mode and show/hide AI buttons
+          if (manager) {
+            const oldAiModeEnabled = manager.aiModeEnabled;
+            manager.aiModeEnabled = newAiModeEnabled;
+
+            if (oldAiModeEnabled !== newAiModeEnabled) {
+              // Show or hide AI summarizer buttons
+              if (newAiModeEnabled) {
+                // Reinitialize Prompt API when AI mode is turned back on
+                (async () => {
+                  try {
+                    if (window.promptManager) {
+                      await window.promptManager.initialize();
+                    }
+                  } catch (error) {
+                    console.error('[DeepseekTimeline] Failed to reinitialize prompt manager:', error);
+                  }
+                })();
+
+                // Re-inject AI buttons if they don't exist
+                if (!manager.ui.summarizerButton) {
+                  manager.injectUI();
+                }
+                if (manager.ui.summarizerButton) {
+                  manager.ui.summarizerButton.style.display = '';
+                }
+                if (manager.ui.incrementalButton) {
+                  manager.ui.incrementalButton.style.display = manager.ui.incrementalButton.dataset.shouldShow === 'true' ? '' : 'none';
+                }
+                // If we have AI summaries, switch back to them
+                if (manager.summarizerState === 'completed' || manager.summarizerState === 'original') {
+                  manager.switchToAISummaries();
+                }
+              } else {
+                // Hide AI buttons and switch to original text
+                if (manager.ui.summarizerButton) {
+                  manager.ui.summarizerButton.style.display = 'none';
+                }
+                if (manager.ui.incrementalButton) {
+                  manager.ui.incrementalButton.style.display = 'none';
+                }
+                // Force all markers to show original text
+                manager.useSummarization = false;
+                for (let i = 0; i < manager.markers.length; i++) {
+                  const marker = manager.markers[i];
+                  marker.summary = marker.originalText;
+                  if (marker.dotElement) {
+                    try {
+                      marker.dotElement.setAttribute('aria-label', marker.originalText);
+                    } catch {}
+                  }
+                }
+                // Update tooltip if visible
+                try {
+                  if (manager.ui.tooltip?.classList.contains('visible')) {
+                    const currentDot = manager.timelineBar?.querySelector('.timeline-dot:hover, .timeline-dot:focus');
+                    if (currentDot) {
+                      manager.refreshTooltipForDot(currentDot);
+                    }
+                  }
+                } catch {}
+              }
+            }
+          }
         }
         if (!changed) return;
         const enabled = timelineActive && providerEnabled;
