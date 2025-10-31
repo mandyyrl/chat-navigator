@@ -1633,7 +1633,10 @@
           progressText.textContent = '';
         }
         if (svg) svg.style.display = 'block';
-        if (badge) badge.style.display = 'none';
+        if (badge) {
+          badge.style.display = 'none';
+          badge.textContent = '0';
+        }
         button.classList.remove('has-badge');
 
         if (hasUnsummarized) {
@@ -1641,10 +1644,7 @@
             ? `Summarize ${unsummarizedCount} new message${unsummarizedCount > 1 ? 's' : ''}`
             : `Summarize ${unsummarizedCount} message${unsummarizedCount > 1 ? 's' : ''}`;
 
-          const stateClass = this.summarizerState === 'original'
-            ? 'original'
-            : (this.summarizerState === 'completed' ? 'completed' : 'idle');
-          button.classList.add(stateClass);
+          button.classList.add('idle');
           button.classList.add('has-badge');
           button.setAttribute('title', title);
           button.setAttribute('aria-label', title);
@@ -1717,7 +1717,7 @@
           if (svg) svg.style.display = 'none';
           if (badge) badge.style.display = 'none';
           if (progressText) {
-            progressText.style.display = 'block';
+            progressText.style.display = 'flex';
             progressText.textContent = '0%';
           }
         } catch {}

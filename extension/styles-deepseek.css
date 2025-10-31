@@ -391,11 +391,8 @@ body.dark .timeline-left-slider .timeline-left-handle:hover,
     padding: 0;
     box-sizing: border-box;
     color: var(--timeline-tooltip-text);
-}
-
-.timeline-summarizer-button.has-badge {
-    justify-content: space-between;
-    padding: 0 4px;
+    gap: 0;
+    overflow: visible;
 }
 
 .timeline-summarizer-button:hover {
@@ -460,9 +457,12 @@ body.dark .timeline-left-slider .timeline-left-handle:hover,
 }
 
 .timeline-summarizer-button .count-badge {
-    position: static;
-    min-width: 16px;
-    height: 16px;
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    transform: none;
+    min-width: 18px;
+    height: 18px;
     padding: 0 4px;
     background: linear-gradient(135deg, #FF6B6B, #FF4444);
     color: #FFFFFF;
@@ -484,4 +484,5 @@ body.dark .timeline-left-slider .timeline-left-handle:hover,
     width: 16px;
     height: 16px;
     flex-shrink: 0;
+    transition: transform 150ms ease;
 }
