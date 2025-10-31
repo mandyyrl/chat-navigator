@@ -408,12 +408,16 @@ body.dark-theme .timeline-left-slider .timeline-left-handle:hover,
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 4px;
     cursor: pointer;
     box-shadow: var(--timeline-tooltip-shadow);
     transition: all 150ms ease;
     z-index: 2147483647; /* Above tooltip to remain clickable */
     padding: 0;
+    box-sizing: border-box;
     color: var(--timeline-tooltip-text);
+    gap: 0;
+    overflow: visible;
 }
 
 .timeline-summarizer-button:hover {
@@ -466,67 +470,44 @@ body.dark-theme .timeline-left-slider .timeline-left-handle:hover,
 /* Percentage display inside button */
 .timeline-summarizer-button .progress-text {
     position: absolute;
-    font-size: 10px;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
     font-weight: bold;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     color: inherit;
     pointer-events: none;
 }
 
-.timeline-summarizer-button svg {
-    width: 20px;
-    height: 20px;
-}
-
-/* Incremental summarize button (anchored to top-right of summarizer button) */
-.timeline-incremental-button {
-    position: fixed;
-    /* Position will be set by JS relative to summarizer button */
+.timeline-summarizer-button .count-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    transform: none;
+    min-width: 18px;
     height: 18px;
-    background: var(--timeline-tooltip-bg);
-    border: 1px solid var(--timeline-tooltip-border);
-    border-radius: 9px;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    padding: 0 5px;
-    cursor: pointer;
-    transition: all 150ms ease;
-    z-index: 2147483647;
-    color: var(--timeline-tooltip-text);
-}
-
-.timeline-incremental-button:hover {
-    transform: scale(1.1);
-}
-
-.timeline-incremental-button:active {
-    transform: scale(0.95);
-}
-
-/* SVG icon styling - left side */
-.timeline-incremental-button svg {
-    width: 10px;
-    height: 10px;
-    stroke: currentColor;
-    flex-shrink: 0;
-}
-
-/* Number badge - right side, same size as icon */
-.timeline-incremental-button .count-badge {
-    width: 10px;
-    height: 10px;
+    padding: 0 4px;
     background: linear-gradient(135deg, #FF6B6B, #FF4444);
     color: #FFFFFF;
-    border-radius: 5px;
-    font-size: 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(0,0,0,0.12);
+    font-size: 11px;
     font-weight: 700;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    display: flex;
+    display: none;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
     line-height: 1;
+    flex-shrink: 0;
+    pointer-events: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
+.timeline-summarizer-button svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    transition: transform 150ms ease;
 }
