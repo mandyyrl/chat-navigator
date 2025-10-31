@@ -175,16 +175,54 @@ body.boot .switch::after { transition: none !important; }
 body.global-off .providers { opacity: .6; }
 body.global-off .providers .switch { pointer-events: none; }
 
-/* GitHub card */
-.github-link { text-decoration: none; color: inherit; display: block; }
-.github-card { display: flex; align-items: center; padding: 12px 16px; background: var(--surface); border-top: 1px solid var(--border); gap: 12px; transition: all 0.2s ease; }
-.github-card:hover { background: var(--surface-hover); }
-.github-card:hover .arrow-icon { transform: translateX(4px); color: var(--primary); }
-.github-icon { width: 20px; height: 20px; color: var(--text); flex-shrink: 0; }
-.github-info { flex-grow: 1; display: flex; flex-direction: column; gap: 2px; }
-.github-text { font-size: 14px; font-weight: 500; color: var(--text); }
-.github-desc { font-size: 12px; color: var(--text-secondary); }
-.arrow-icon { width: 16px; height: 16px; color: var(--text-secondary); flex-shrink: 0; transition: all 0.2s ease; }
+.footer-actions {
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.footer-action {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 0;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.footer-action:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.footer-action:hover {
+  background: var(--surface-hover);
+  color: var(--primary);
+}
+.github-action {
+  text-decoration: none;
+}
+.github-action:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.trash-action {
+  border-left: 1px solid var(--border);
+  background: transparent;
+}
+.trash-action:hover {
+  color: #d64545;
+}
+.trash-action:focus-visible {
+  outline-offset: 2px;
+}
+.github-icon,
+.trash-icon {
+  width: 20px;
+  height: 20px;
+  color: currentColor;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }

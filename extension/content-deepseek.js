@@ -143,7 +143,7 @@
 
       // Stage 8: active + tooltip + star
       this.activeIdx = -1;
-      this.ui = { tooltip: null, summarizerButton: null, incrementalButton: null };
+      this.ui = { tooltip: null, summarizerButton: null };
       this.measureEl = null; // hidden measurer for tooltip truncation
       this.tooltipHideDelay = 100;
       this.tooltipHideTimer = null;
@@ -349,7 +349,8 @@
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
           <path d="M8 10h8M8 14h4"/>
         </svg>
-        <span class="progress-text"></span>`;
+        <span class="progress-text"></span>
+        <span class="count-badge" aria-hidden="true">0</span>`;
         document.body.appendChild(summarizerBtn);
         this.ui.summarizerButton = summarizerBtn;
 
@@ -372,35 +373,10 @@
             this.switchToAISummaries();
           }
         });
+
+        try { this.updateSummarizerButtonUI(); } catch {}
       }
 
-      // Create incremental summarize button only if AI mode is enabled
-      if (this.aiModeEnabled && !this.ui.incrementalButton) {
-        // Clean up any existing stray buttons first
-        try {
-          const existingBtn = document.querySelector('.timeline-incremental-button');
-          if (existingBtn) existingBtn.remove();
-        } catch {}
-
-        const incrementalBtn = document.createElement('button');
-        incrementalBtn.className = 'timeline-incremental-button';
-        incrementalBtn.setAttribute('aria-label', 'Summarize new messages');
-        incrementalBtn.setAttribute('title', 'Summarize new messages');
-        incrementalBtn.style.display = 'none'; // Hidden by default, shown when needed
-        incrementalBtn.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M23 4v6h-6M1 20v-6h6"/>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-        </svg>
-        <span class="count-badge">0</span>`;
-        document.body.appendChild(incrementalBtn);
-        this.ui.incrementalButton = incrementalBtn;
-
-        // Click handler: incrementally summarize new markers
-        incrementalBtn.addEventListener('click', async () => {
-          if (this.isSummarizing) return;
-          await this.applySummarizationToAllMarkers();
-        });
-      }
     }
 
     ensureTooltip() {
@@ -556,6 +532,8 @@
         this._pendingSummaries = null;
       }
 
+      try { this.updateSummarizerButtonUI(); } catch {}
+
       // Check if there are unsummarized markers and update incremental button
       if (this.summarizerState === 'completed' || this.summarizerState === 'original') {
         try { this.updateIncrementalSummarizeButton(); } catch {}
@@ -707,20 +685,14 @@
       this.ui.slider = null;
       this.ui.sliderHandle = null;
       try { this.ui.tooltip?.remove(); } catch {}
-      // Remove summarizer button and incremental button
+      // Remove summarizer button
       try { this.ui.summarizerButton?.remove(); } catch {}
-      try { this.ui.incrementalButton?.remove(); } catch {}
       // Clean up any stray buttons
       try {
         const straySummarizer = document.querySelector('.timeline-summarizer-button');
         if (straySummarizer) straySummarizer.remove();
       } catch {}
-      try {
-        const strayIncremental = document.querySelector('.timeline-incremental-button');
-        if (strayIncremental) strayIncremental.remove();
-      } catch {}
       this.ui.summarizerButton = null;
-      this.ui.incrementalButton = null;
       try { this.measureEl?.remove(); } catch {}
       try { window.removeEventListener('storage', this.onStorage); } catch {}
       this.timelineBar = null;
@@ -1661,89 +1633,83 @@
   };
 
   // Update summarizer button UI based on current state
-  DeepseekTimeline.prototype.updateSummarizerButtonUI = function() {
-    if (!this.ui.summarizerButton) return;
+DeepseekTimeline.prototype.updateSummarizerButtonUI = function() {
+  if (!this.ui?.summarizerButton) return;
+  if (this.isSummarizing) return;
 
-    const svg = this.ui.summarizerButton.querySelector('svg');
-    const progressText = this.ui.summarizerButton.querySelector('.progress-text');
+  const button = this.ui.summarizerButton;
+  const svg = button.querySelector('svg');
+  const progressText = button.querySelector('.progress-text');
+  const badge = button.querySelector('.count-badge');
+  const markers = Array.isArray(this.markers) ? this.markers : [];
+  const unsummarizedCount = markers.filter(m => !m.aiSummary).length;
+  const summarizedCount = markers.length - unsummarizedCount;
+  const hasUnsummarized = unsummarizedCount > 0;
 
-    try {
-      // Remove all state classes first
-      this.ui.summarizerButton.classList.remove('idle', 'processing', 'completed', 'original');
+  try {
+    button.classList.remove('idle', 'processing', 'completed', 'original');
+    button.removeAttribute('disabled');
 
-      // Hide progress text by default
-      if (progressText) progressText.style.display = 'none';
-      if (svg) svg.style.display = 'block';
-
-      if (this.summarizerState === 'completed') {
-        this.ui.summarizerButton.classList.add('completed');
-        this.ui.summarizerButton.setAttribute('title', 'Switch to original text');
-        if (svg) {
-          svg.innerHTML = `<path d="M20 6L9 17l-5-5"/>`;
-        }
-      } else if (this.summarizerState === 'original') {
-        this.ui.summarizerButton.classList.add('original');
-        this.ui.summarizerButton.setAttribute('title', 'Switch to AI summaries');
-        if (svg) {
-          svg.innerHTML = `<path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/>`;
-        }
-      } else {
-        // idle state
-        this.ui.summarizerButton.classList.add('idle');
-        this.ui.summarizerButton.setAttribute('title', 'Generate AI summaries');
-        if (svg) {
-          svg.innerHTML = `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            <path d="M8 10h8M8 14h4"/>`;
-        }
-      }
-    } catch (error) {
-      console.debug('[DeepseekTimeline] Failed to update button UI:', error);
+    if (progressText) {
+      progressText.style.display = 'none';
+      progressText.textContent = '';
     }
-  };
+    if (svg) svg.style.display = 'block';
+    if (badge) badge.style.display = 'none';
+    button.classList.remove('has-badge');
+
+    if (hasUnsummarized) {
+      const title = summarizedCount > 0
+        ? `Summarize ${unsummarizedCount} new message${unsummarizedCount > 1 ? 's' : ''}`
+        : `Summarize ${unsummarizedCount} message${unsummarizedCount > 1 ? 's' : ''}`;
+
+      const stateClass = this.summarizerState === 'original'
+        ? 'original'
+        : (this.summarizerState === 'completed' ? 'completed' : 'idle');
+      button.classList.add(stateClass);
+      button.classList.add('has-badge');
+      button.setAttribute('title', title);
+      button.setAttribute('aria-label', title);
+
+      if (badge) {
+        badge.textContent = String(unsummarizedCount);
+        badge.style.display = 'flex';
+      }
+      if (svg) {
+        svg.innerHTML = `<path d="M23 4v6h-6M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>`;
+      }
+    } else if (this.summarizerState === 'completed') {
+      button.classList.add('completed');
+      button.setAttribute('title', 'Switch to original text');
+      button.setAttribute('aria-label', 'Switch to original text');
+      if (svg) {
+        svg.innerHTML = `<path d="M20 6L9 17l-5-5"/>`;
+      }
+    } else if (this.summarizerState === 'original') {
+      button.classList.add('original');
+      button.setAttribute('title', 'Switch to AI summaries');
+      button.setAttribute('aria-label', 'Switch to AI summaries');
+      if (svg) {
+        svg.innerHTML = `<path d="M3 7v6h6"/><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/>`;
+      }
+    } else {
+      button.classList.add('idle');
+      button.setAttribute('title', 'Generate AI summaries');
+      button.setAttribute('aria-label', 'Generate AI summaries');
+      if (svg) {
+        svg.innerHTML = `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          <path d="M8 10h8M8 14h4"/>`;
+      }
+    }
+  } catch (error) {
+    console.debug('[DeepseekTimeline] Failed to update button UI:', error);
+  }
+};
 
   // Update incremental summarize button (shows count of unsummarized markers)
   DeepseekTimeline.prototype.updateIncrementalSummarizeButton = function() {
-    // Count markers that don't have AI summaries
-    const unsummarizedCount = this.markers.filter(m => !m.aiSummary).length;
-    const summarizedCount = this.markers.filter(m => m.aiSummary).length;
-
-    // Only show if:
-    // 1. We've completed at least one full summarization (state is 'completed' or 'original')
-    // 2. There are some markers WITH AI summaries (meaning we did summarize before)
-    // 3. There are NEW markers without AI summaries
-    const shouldShow = (this.summarizerState === 'completed' || this.summarizerState === 'original')
-                      && summarizedCount > 0
-                      && unsummarizedCount > 0;
-
-    if (!this.ui.incrementalButton || !this.ui.summarizerButton) return;
-
-    try {
-      if (shouldShow) {
-        // Position button below the summarizer button and center align horizontally
-        const summarizerRect = this.ui.summarizerButton.getBoundingClientRect();
-        const incrementalBtn = this.ui.incrementalButton;
-        const verticalGap = 6;
-
-        incrementalBtn.style.display = 'flex';
-        incrementalBtn.style.top = `${summarizerRect.bottom + verticalGap}px`;
-        incrementalBtn.style.left = `${summarizerRect.left}px`;
-
-        const incrementalRect = incrementalBtn.getBoundingClientRect();
-        const centeredLeft = summarizerRect.left + (summarizerRect.width / 2) - (incrementalRect.width / 2);
-        incrementalBtn.style.left = `${centeredLeft}px`;
-
-        // Update the count badge
-        const badge = incrementalBtn.querySelector('.count-badge');
-        if (badge) {
-          badge.textContent = unsummarizedCount;
-        }
-        incrementalBtn.setAttribute('title', `Summarize ${unsummarizedCount} new message${unsummarizedCount > 1 ? 's' : ''}`);
-      } else {
-        this.ui.incrementalButton.style.display = 'none';
-      }
-    } catch (error) {
-      console.debug('[DeepseekTimeline] Failed to update incremental summarize button:', error);
-    }
+    try { this.updateSummarizerButtonUI(); } catch {}
   };
 
   DeepseekTimeline.prototype.applySummarizationToAllMarkers = async function() {
@@ -1759,6 +1725,7 @@
     this.summarizerState = 'processing';
 
     const progressText = this.ui.summarizerButton?.querySelector('.progress-text');
+    const badge = this.ui.summarizerButton?.querySelector('.count-badge');
     const svg = this.ui.summarizerButton?.querySelector('svg');
 
     // Show processing state on button
@@ -1768,8 +1735,10 @@
         this.ui.summarizerButton.classList.add('processing');
         this.ui.summarizerButton.setAttribute('disabled', 'true');
         this.ui.summarizerButton.setAttribute('title', 'Processing summaries...');
+        this.ui.summarizerButton.classList.remove('has-badge');
         // Hide icon, show percentage
         if (svg) svg.style.display = 'none';
+        if (badge) badge.style.display = 'none';
         if (progressText) {
           progressText.style.display = 'block';
           progressText.textContent = '0%';
@@ -1909,6 +1878,7 @@
       }
     } finally {
       this.isSummarizing = false;
+      try { this.updateSummarizerButtonUI(); } catch {}
     }
   };
 
@@ -1945,6 +1915,8 @@
         }
       } catch {}
     }
+
+    try { this.updateSummarizerButtonUI(); } catch {}
 
     // Force tooltip refresh if visible
     try {
@@ -1993,6 +1965,8 @@
       } catch {}
     }
 
+    try { this.updateSummarizerButtonUI(); } catch {}
+
     // Force tooltip refresh if visible
     try {
       if (this.ui.tooltip?.classList.contains('visible')) {
@@ -2005,15 +1979,52 @@
   };
 
   // --- Entry & SPA wiring (Stage 3) ---
-  let timelineActive = true;       // global on/off
-  let providerEnabled = true;      // per-provider on/off (deepseek)
-  let manager = null;
-  let currentUrl = location.href;
-  let routeCheckIntervalId = null;
-  let routeListenersAttached = false;
-  let initialObserver = null;
-  let pageObserver = null;
-  let initTimerId = null;           // delayed init timer for SPA route
+let timelineActive = true;       // global on/off
+let providerEnabled = true;      // per-provider on/off (deepseek)
+let manager = null;
+let currentUrl = location.href;
+let routeCheckIntervalId = null;
+let routeListenersAttached = false;
+let initialObserver = null;
+let pageObserver = null;
+let initTimerId = null;           // delayed init timer for SPA route
+ 
+function clearDeepseekStoredSummaries() {
+  try {
+    const prefixes = ['deepseekTimelineSummaries:', 'deepseekTimelineStars:'];
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && prefixes.some(prefix => key.startsWith(prefix))) {
+        keysToRemove.push(key);
+      }
+    }
+    for (const key of keysToRemove) {
+      try { localStorage.removeItem(key); } catch {}
+    }
+  } catch (error) {
+    console.debug('[DeepseekTimeline] Failed to clear stored summaries from localStorage:', error);
+  }
+
+  if (manager) {
+    try {
+      manager.useSummarization = false;
+      manager.summarizerState = 'idle';
+      for (let i = 0; i < manager.markers.length; i++) {
+        const marker = manager.markers[i];
+        marker.aiSummary = null;
+        marker.summary = marker.originalText;
+        if (marker.dotElement) {
+          try { marker.dotElement.setAttribute('aria-label', marker.originalText); } catch {}
+        }
+      }
+      manager.updateSummarizerButtonUI();
+      manager.updateIncrementalSummarizeButton();
+    } catch (error) {
+      console.debug('[DeepseekTimeline] Failed to reset timeline summaries after clear:', error);
+    }
+  }
+}
 
   function initializeTimeline() {
     if (manager) { try { manager.destroy(); } catch {} manager = null; }
@@ -2173,9 +2184,6 @@
                 if (manager.ui.summarizerButton) {
                   manager.ui.summarizerButton.style.display = '';
                 }
-                if (manager.ui.incrementalButton) {
-                  manager.ui.incrementalButton.style.display = manager.ui.incrementalButton.dataset.shouldShow === 'true' ? '' : 'none';
-                }
                 // If we have AI summaries, switch back to them
                 if (manager.summarizerState === 'completed' || manager.summarizerState === 'original') {
                   manager.switchToAISummaries();
@@ -2184,9 +2192,6 @@
                 // Hide AI buttons and switch to original text
                 if (manager.ui.summarizerButton) {
                   manager.ui.summarizerButton.style.display = 'none';
-                }
-                if (manager.ui.incrementalButton) {
-                  manager.ui.incrementalButton.style.display = 'none';
                 }
                 // Force all markers to show original text
                 manager.useSummarization = false;
@@ -2211,6 +2216,9 @@
               }
             }
           }
+        }
+        if ('timelineClearRequest' in changes) {
+          try { clearDeepseekStoredSummaries(); } catch {}
         }
         if (!changed) return;
         const enabled = timelineActive && providerEnabled;

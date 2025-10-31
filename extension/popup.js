@@ -17,7 +17,8 @@
       'aria.chatgptToggle': 'Enable ChatGPT timeline',
       'aria.geminiToggle': 'Enable Gemini timeline',
       'aria.deepseekToggle': 'Enable DeepSeek timeline',
-      'aria.github': 'Based on this GitHub project'
+      'aria.github': 'Based on this GitHub project',
+      'aria.clearSummaries': 'Delete stored summaries'
     },
     zh: {
       'header.title': '会话时间轴',
@@ -33,7 +34,21 @@
       'aria.chatgptToggle': '启用 ChatGPT 时间轴',
       'aria.geminiToggle': '启用 Gemini 时间轴',
       'aria.deepseekToggle': '启用 DeepSeek 时间轴',
-      'aria.github': '基于此 GitHub 项目'
+      'aria.github': '基于此 GitHub 项目',
+      'aria.clearSummaries': '删除已存的摘要'
+    }
+  };
+
+  const clearMessages = {
+    en: {
+      confirm: 'Delete all stored summaries? This cannot be undone.',
+      success: 'Stored summaries deleted. Reload any open chats to see the change.',
+      failure: 'Failed to delete stored summaries. Please try again.'
+    },
+    zh: {
+      confirm: '确认删除所有已存的摘要吗？此操作无法恢复。',
+      success: '已删除已存摘要，刷新已打开的会话后可生效。',
+      failure: '删除摘要失败，请重试。'
     }
   };
 
@@ -57,6 +72,12 @@
         el.setAttribute('aria-label', t[key]);
       }
     });
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+      const key = el.getAttribute('data-i18n-title');
+      if (t[key]) {
+        el.setAttribute('title', t[key]);
+      }
+    });
 
     // Update HTML lang attribute
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
@@ -69,6 +90,7 @@
     const deepseekToggle = q('#provider-deepseek-toggle');
     const geminiToggle = q('#provider-gemini-toggle');
     const langToggle = q('#langToggle');
+    const clearButton = q('#clearSummariesButton');
 
     if (!globalToggle || !aiModeToggle || !providerToggle || !deepseekToggle || !geminiToggle || !langToggle) return;
 
@@ -175,5 +197,48 @@
         });
       } catch {}
     });
+
+    if (clearButton) {
+      clearButton.addEventListener('click', () => {
+        const locale = clearMessages[currentLang] ? currentLang : 'en';
+        const messages = clearMessages[locale];
+        if (!confirm(messages.confirm)) return;
+        const broadcastClearRequest = () => {
+          try { chrome.storage.local.set({ timelineClearRequest: Date.now() }); } catch {}
+        };
+        try {
+          chrome.storage.local.get(null, (items) => {
+            try {
+              const prefixes = [
+                'chatgptTimelineSummaries:',
+                'geminiTimelineSummaries:',
+                'deepseekTimelineSummaries:'
+              ];
+              const keysToRemove = Object.keys(items || {}).filter(key => prefixes.some(prefix => key.startsWith(prefix)));
+              if (keysToRemove.length > 0) {
+                chrome.storage.local.remove(keysToRemove, () => {
+                  if (chrome.runtime?.lastError) {
+                    broadcastClearRequest();
+                    alert(messages.failure);
+                  } else {
+                    broadcastClearRequest();
+                    alert(messages.success);
+                  }
+                });
+              } else {
+                broadcastClearRequest();
+                alert(messages.success);
+              }
+            } catch {
+              broadcastClearRequest();
+              alert(messages.success);
+            }
+          });
+        } catch {
+          broadcastClearRequest();
+          alert(messages.failure);
+        }
+      });
+    }
   });
 })();
