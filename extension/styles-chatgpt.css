@@ -427,7 +427,7 @@ html.dark .timeline-left-slider::before { background: rgba(255,255,255,0.10); }
     height: 20px;
 }
 
-/* Incremental summarize button (anchored to top-right of summarizer button) */
+/* Incremental summarize button (anchored below the summarizer button) */
 .timeline-incremental-button {
     position: fixed;
     /* Position will be set by JS relative to summarizer button */

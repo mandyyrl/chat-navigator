@@ -1852,18 +1852,25 @@ class TimelineManager {
 
         try {
             if (shouldShow) {
-                // Position button to the right of summarizer button (closer to timeline bar), vertically centered
+                // Position button below the summarizer button and center align horizontally
                 const summarizerRect = this.ui.summarizerButton.getBoundingClientRect();
-                this.ui.incrementalButton.style.top = `${summarizerRect.top + (summarizerRect.height / 2) - 9}px`; // 9 = half of button height (18px)
-                this.ui.incrementalButton.style.left = `${summarizerRect.right + 6}px`; // 6px gap from summarizer button
+                const incrementalBtn = this.ui.incrementalButton;
+                const verticalGap = 6;
+
+                incrementalBtn.style.display = 'flex';
+                incrementalBtn.style.top = `${summarizerRect.bottom + verticalGap}px`;
+                incrementalBtn.style.left = `${summarizerRect.left}px`;
+
+                const incrementalRect = incrementalBtn.getBoundingClientRect();
+                const centeredLeft = summarizerRect.left + (summarizerRect.width / 2) - (incrementalRect.width / 2);
+                incrementalBtn.style.left = `${centeredLeft}px`;
 
                 // Update the count badge
-                const badge = this.ui.incrementalButton.querySelector('.count-badge');
+                const badge = incrementalBtn.querySelector('.count-badge');
                 if (badge) {
                     badge.textContent = unsummarizedCount;
                 }
-                this.ui.incrementalButton.style.display = 'flex';
-                this.ui.incrementalButton.setAttribute('title', `Summarize ${unsummarizedCount} new message${unsummarizedCount > 1 ? 's' : ''}`);
+                incrementalBtn.setAttribute('title', `Summarize ${unsummarizedCount} new message${unsummarizedCount > 1 ? 's' : ''}`);
             } else {
                 this.ui.incrementalButton.style.display = 'none';
             }
